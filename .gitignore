@@ -1,0 +1,62 @@
+# Data files
+*.csv
+*.h5
+*.hdf5
+*.pkl
+*.npy
+*.npz
+
+# Images
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.bmp
+*.tiff
+*.svg
+
+# Model weights
+*.pth
+*.pt
+*.ckpt
+*.bin
+*.safetensors
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs (keep .md files but exclude data logs)
+logs/*/episode_reward.png
+logs/*/loss_curves.csv
+logs/*/loss_curves.png
+logs/*/loss_reward_action.csv
+logs/*/test_results*.csv
+logs/*/test_reward_curves.png
+logs/*/best_model.pt
+
+# feature data
+feature_all/
+
+# Large data files in 1数据处理
+1数据处理/DS02/*.csv
+1数据处理/DS02/*.pth
+1数据处理/DS02/*.png
