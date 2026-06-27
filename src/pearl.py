@@ -190,25 +190,7 @@ def train(cfg):
                 probs = F.softmax(logits / temp, dim=-1).cpu().numpy().flatten()
             probs = probs / probs.sum()
 
-            if ep <= curriculum_ep:
-                probs[4], probs[5], probs[6] = probs[4] * 0.1, probs[5] * 0.1, probs[6] * 0.1
-                probs = probs / probs.sum()
-
-            degradation_progress = s[-1]
-
-            # 前 warmup_ep 个 episode：退化超过 70% 时强制维修
-            if ep <= warmup_ep and degradation_progress > 0.7:
-                action = np.random.choice([1, 2, 3])
-            # 退化后期提高维修采样率
-            elif degradation_progress > 0.6:
-                boost = 3.0 if degradation_progress > 0.8 else 2.0
-                probs[1] *= boost
-                probs[2] *= boost
-                probs[3] *= boost
-                probs = probs / probs.sum()
-                action = np.random.choice(n_actions, p=probs)
-            else:
-                action = np.random.choice(n_actions, p=probs)
+            action = np.random.choice(n_actions, p=probs)
             ep_entropies.append(-np.sum(probs * np.log(probs + 1e-8)))
             ep_z_norms.append(float(torch.norm(z).item()))
 

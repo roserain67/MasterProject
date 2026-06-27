@@ -29,8 +29,8 @@ entropy_coef: 0.05
 
 # Critic 稳定性
 tau: 0.005
-reward_clip: 200
-td_clip: 800
+reward_clip: 500
+td_clip: 1500
 grad_clip: 0.5
 
 # Replay buffer

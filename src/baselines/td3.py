@@ -116,16 +116,6 @@ def train(cfg, encoder_model=None, train_sequences=None, test_by_unit=None):
                 logits = actor.net(s_t)
                 probs = F.softmax(logits / temp, dim=-1).cpu().numpy().flatten()
             probs = probs / probs.sum()
-            if ep <= curriculum_ep:
-                probs[4], probs[5], probs[6] = probs[4] * 0.1, probs[5] * 0.1, probs[6] * 0.1
-                probs = probs / probs.sum()
-            degradation_progress = s[-1]
-            if degradation_progress > 0.6:
-                boost = 3.0 if degradation_progress > 0.8 else 2.0
-                probs[1] *= boost
-                probs[2] *= boost
-                probs[3] *= boost
-                probs = probs / probs.sum()
             action = np.random.choice(n_actions, p=probs)
             s2, r, done, _ = env.step(action)
             r_clipped = np.clip(r, -reward_clip, reward_clip)

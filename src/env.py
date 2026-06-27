@@ -14,7 +14,7 @@ class MaintenanceEnv(gym.Env):
     """
     metadata = {"render_modes": []}
 
-    def __init__(self, sequence, encoder, state_dim=65, max_steps=200, step_size=5, cost_alpha=0.2):
+    def __init__(self, sequence, encoder, state_dim=65, max_steps=200, step_size=5, cost_alpha=0.3):
         super().__init__()
 
         self.sequence = sequence.astype(np.float32)
@@ -29,18 +29,13 @@ class MaintenanceEnv(gym.Env):
 
         self.action_space = spaces.Discrete(8)
 
-        self.reward_step_max = 2.0
-        self.reward_step_min = 0.5
-        self.reward_prev_base = 10.0
         self.cost_post_A = 35.0
         self.cost_post_B = 35.0
         self.cost_post_AB = 50.0
-        self.cost_replace = 80.0
-        self.penalty_break = 300.0
+        self.cost_replace = 50.0
+        self.penalty_break = 200.0
         self.penalty_over_repair = 50.0
-        self.degradation_risk_threshold = 0.8
-        self.degradation_risk_cost = 1.0
-        self.survival_bonus = 20.0
+        self.survival_bonus = 50.0
 
         self.step_size = step_size
         self.cost_alpha = cost_alpha
@@ -58,6 +53,24 @@ class MaintenanceEnv(gym.Env):
 
     def _scaled_cost(self, base_cost, count):
         return base_cost * (1 + self.cost_alpha * count)
+
+    def _get_progress(self):
+        return self.pointer / max(1, self.seq_len - 1)
+
+    def _get_reward_step(self):
+        progress = self._get_progress()
+        if progress <= 0.5:
+            return 3.0
+        elif progress <= 0.8:
+            return 3.0 - 5.0 * (progress - 0.5) / 0.3
+        else:
+            return -2.0 - 3.0 * (progress - 0.8) / 0.2
+
+    def _get_preventive_reward(self, count):
+        progress = self._get_progress()
+        base_reward = 15.0 * progress
+        cost_increase = 3.0 * (count - 1)
+        return max(0, base_reward - cost_increase)
 
     def encode_state(self):
         if self.pointer == 0:
@@ -81,21 +94,14 @@ class MaintenanceEnv(gym.Env):
         self.state = self.encode_state()
         return self.state
 
-    def _get_reward_step(self):
-        progress = self.pointer / max(1, self.seq_len - 1)
-        if progress <= 0.5:
-            return self.reward_step_max
-        return self.reward_step_max - (self.reward_step_max - self.reward_step_min) * (progress - 0.5) / 0.5
-
     def step(self, action):
         reward = 0
         done = False
-        reward_step = self._get_reward_step()
         self.current_step += 1
 
         if action == 0:
             self.repair_in_row = 0
-            reward += reward_step
+            reward += self._get_reward_step()
             self.pointer += 1
 
         elif action in [1, 2, 3]:
@@ -106,7 +112,7 @@ class MaintenanceEnv(gym.Env):
                 self.repair_count_B += 1
             max_count = max(self.repair_count_A if action in [1, 3] else 0,
                             self.repair_count_B if action in [2, 3] else 0)
-            r = self.reward_prev_base - 2.0 * (max_count - 1)
+            r = self._get_preventive_reward(max_count)
             if action == 3:
                 r *= 0.9
             reward += r
@@ -128,7 +134,7 @@ class MaintenanceEnv(gym.Env):
                 cost = self._scaled_cost(self.cost_post_B, self.repair_count_B)
             else:
                 cost = self._scaled_cost(self.cost_post_AB, max_count)
-            reward -= (cost + reward_step)
+            reward -= cost
             rp_A = self._restore_point(self.repair_count_A) if action in [4, 6] else self.pointer
             rp_B = self._restore_point(self.repair_count_B) if action in [5, 6] else self.pointer
             self.pointer = max(rp_A, rp_B)
@@ -151,11 +157,6 @@ class MaintenanceEnv(gym.Env):
         if not done and self.current_step >= self.max_steps:
             done = True
             reward += self.survival_bonus
-
-        if not done:
-            progress = self.pointer / max(1, self.seq_len - 1)
-            if progress > self.degradation_risk_threshold:
-                reward -= self.degradation_risk_cost
 
         if not done:
             self.state = self.encode_state()
