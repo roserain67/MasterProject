@@ -54,3 +54,4 @@ pretrain_path: "pretrain/gru_pretrained.pt"
 
 # 日志
 log_dir: "logs/pearl"
+
