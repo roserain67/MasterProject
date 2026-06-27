@@ -14,12 +14,13 @@ class MaintenanceEnv(gym.Env):
     """
     metadata = {"render_modes": []}
 
-    def __init__(self, sequence, encoder, state_dim=65, step_size=5, cost_alpha=0.2):
+    def __init__(self, sequence, encoder, state_dim=65, max_steps=200, step_size=5, cost_alpha=0.2):
         super().__init__()
 
         self.sequence = sequence.astype(np.float32)
         self.seq_len = sequence.shape[0]
         self.encoder = encoder.eval().to(DEVICE)
+        self.max_steps = max_steps
 
         self.state_dim = state_dim
         self.observation_space = spaces.Box(
@@ -39,6 +40,7 @@ class MaintenanceEnv(gym.Env):
         self.penalty_over_repair = 50.0
         self.degradation_risk_threshold = 0.8
         self.degradation_risk_cost = 1.0
+        self.survival_bonus = 20.0
 
         self.step_size = step_size
         self.cost_alpha = cost_alpha
@@ -48,6 +50,7 @@ class MaintenanceEnv(gym.Env):
         self.repair_count_B = 0
         self.repair_in_row = 0
         self.max_repair_in_row = 15
+        self.current_step = 0
         self.state = None
 
     def _restore_point(self, count):
@@ -74,6 +77,7 @@ class MaintenanceEnv(gym.Env):
         self.repair_count_A = 0
         self.repair_count_B = 0
         self.repair_in_row = 0
+        self.current_step = 0
         self.state = self.encode_state()
         return self.state
 
@@ -87,6 +91,7 @@ class MaintenanceEnv(gym.Env):
         reward = 0
         done = False
         reward_step = self._get_reward_step()
+        self.current_step += 1
 
         if action == 0:
             self.repair_in_row = 0
@@ -142,6 +147,10 @@ class MaintenanceEnv(gym.Env):
         if self.pointer >= self.seq_len - 1:
             done = True
             reward -= self.penalty_break
+
+        if not done and self.current_step >= self.max_steps:
+            done = True
+            reward += self.survival_bonus
 
         if not done:
             progress = self.pointer / max(1, self.seq_len - 1)
