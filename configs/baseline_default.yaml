@@ -4,7 +4,7 @@ train_units: [16, 18, 20]
 test_units: [14, 15]
 
 # 环境
-state_dim: 65
+state_dim: 66
 n_actions: 8
 
 # 训练

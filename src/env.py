@@ -8,13 +8,14 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class MaintenanceEnv(gym.Env):
     """
-    基于 GRU 编码的双部件维护环境。
-    state = GRU(序列前缀) ∈ R^64 + 归一化位置 pos_t ∈ [0,1] → R^65
-    8 动作: 0=继续运行, 1-3=预防性维修 A/B/AB, 4-6=事后维修 A/B/AB, 7=更换
+    双部件独立退化维护环境。
+    部件A = HPT效率, 部件B = LPT流量，各自独立退化、独立维修。
+    state = [GRU_emb(64), pos_A(1), pos_B(1)] = 66 维
+    8 动作: 0=运行, 1=修A, 2=修B, 3=修AB, 4=事后修A, 5=事后修B, 6=事后修AB, 7=更换
     """
     metadata = {"render_modes": []}
 
-    def __init__(self, sequence, encoder, state_dim=65, max_steps=200, step_size=5, cost_alpha=0.3):
+    def __init__(self, sequence, encoder, state_dim=66, max_steps=200, step_size=5, cost_alpha=0.3):
         super().__init__()
 
         self.sequence = sequence.astype(np.float32)
@@ -26,7 +27,6 @@ class MaintenanceEnv(gym.Env):
         self.observation_space = spaces.Box(
             low=-np.inf, high=np.inf, shape=(state_dim,), dtype=np.float32
         )
-
         self.action_space = spaces.Discrete(8)
 
         self.cost_post_A = 35.0
@@ -40,7 +40,8 @@ class MaintenanceEnv(gym.Env):
         self.step_size = step_size
         self.cost_alpha = cost_alpha
 
-        self.pointer = 0
+        self.pointer_A = 0
+        self.pointer_B = 0
         self.repair_count_A = 0
         self.repair_count_B = 0
         self.repair_in_row = 0
@@ -54,11 +55,17 @@ class MaintenanceEnv(gym.Env):
     def _scaled_cost(self, base_cost, count):
         return base_cost * (1 + self.cost_alpha * count)
 
-    def _get_progress(self):
-        return self.pointer / max(1, self.seq_len - 1)
+    def _progress_A(self):
+        return self.pointer_A / max(1, self.seq_len - 1)
+
+    def _progress_B(self):
+        return self.pointer_B / max(1, self.seq_len - 1)
+
+    def _max_progress(self):
+        return max(self._progress_A(), self._progress_B())
 
     def _get_reward_step(self):
-        progress = self._get_progress()
+        progress = self._max_progress()
         if progress <= 0.5:
             return 3.0
         elif progress <= 0.8:
@@ -66,27 +73,29 @@ class MaintenanceEnv(gym.Env):
         else:
             return -2.0 - 3.0 * (progress - 0.8) / 0.2
 
-    def _get_preventive_reward(self, count):
-        progress = self._get_progress()
+    def _get_preventive_reward(self, progress, count):
         base_reward = 15.0 * progress
         cost_increase = 3.0 * (count - 1)
         return max(0, base_reward - cost_increase)
 
     def encode_state(self):
-        if self.pointer == 0:
+        seq_pointer = max(self.pointer_A, self.pointer_B)
+        if seq_pointer == 0:
             seq = self.sequence[:1]
         else:
-            seq = self.sequence[: self.pointer + 1]
+            seq = self.sequence[: seq_pointer + 1]
 
         seq_tensor = torch.tensor(seq, dtype=torch.float32).unsqueeze(0).to(DEVICE)
         with torch.no_grad():
             emb = self.encoder(seq_tensor)
         emb_np = emb.squeeze(0).cpu().numpy().astype(np.float32)
-        pos = np.array([self.pointer / max(1, self.seq_len)], dtype=np.float32)
-        return np.concatenate([emb_np, pos])
+        pos_a = np.array([self.pointer_A / max(1, self.seq_len)], dtype=np.float32)
+        pos_b = np.array([self.pointer_B / max(1, self.seq_len)], dtype=np.float32)
+        return np.concatenate([emb_np, pos_a, pos_b])
 
     def reset(self):
-        self.pointer = 0
+        self.pointer_A = 0
+        self.pointer_B = 0
         self.repair_count_A = 0
         self.repair_count_B = 0
         self.repair_in_row = 0
@@ -102,55 +111,65 @@ class MaintenanceEnv(gym.Env):
         if action == 0:
             self.repair_in_row = 0
             reward += self._get_reward_step()
-            self.pointer += 1
+            self.pointer_A += 1
+            self.pointer_B += 1
 
-        elif action in [1, 2, 3]:
+        elif action == 1:
             self.repair_in_row += 1
-            if action == 1 or action == 3:
-                self.repair_count_A += 1
-            if action == 2 or action == 3:
-                self.repair_count_B += 1
-            max_count = max(self.repair_count_A if action in [1, 3] else 0,
-                            self.repair_count_B if action in [2, 3] else 0)
-            r = self._get_preventive_reward(max_count)
-            if action == 3:
-                r *= 0.9
-            reward += r
-            rp_A = self._restore_point(self.repair_count_A) if action in [1, 3] else self.pointer
-            rp_B = self._restore_point(self.repair_count_B) if action in [2, 3] else self.pointer
-            self.pointer = max(rp_A, rp_B)
+            self.repair_count_A += 1
+            reward += self._get_preventive_reward(self._progress_A(), self.repair_count_A)
+            self.pointer_A = self._restore_point(self.repair_count_A)
 
-        elif action in [4, 5, 6]:
+        elif action == 2:
             self.repair_in_row += 1
-            if action == 4 or action == 6:
-                self.repair_count_A += 1
-            if action == 5 or action == 6:
-                self.repair_count_B += 1
-            max_count = max(self.repair_count_A if action in [4, 6] else 0,
-                            self.repair_count_B if action in [5, 6] else 0)
-            if action == 4:
-                cost = self._scaled_cost(self.cost_post_A, self.repair_count_A)
-            elif action == 5:
-                cost = self._scaled_cost(self.cost_post_B, self.repair_count_B)
-            else:
-                cost = self._scaled_cost(self.cost_post_AB, max_count)
-            reward -= cost
-            rp_A = self._restore_point(self.repair_count_A) if action in [4, 6] else self.pointer
-            rp_B = self._restore_point(self.repair_count_B) if action in [5, 6] else self.pointer
-            self.pointer = max(rp_A, rp_B)
+            self.repair_count_B += 1
+            reward += self._get_preventive_reward(self._progress_B(), self.repair_count_B)
+            self.pointer_B = self._restore_point(self.repair_count_B)
+
+        elif action == 3:
+            self.repair_in_row += 1
+            self.repair_count_A += 1
+            self.repair_count_B += 1
+            r_a = self._get_preventive_reward(self._progress_A(), self.repair_count_A)
+            r_b = self._get_preventive_reward(self._progress_B(), self.repair_count_B)
+            reward += (r_a + r_b) * 0.8
+            self.pointer_A = self._restore_point(self.repair_count_A)
+            self.pointer_B = self._restore_point(self.repair_count_B)
+
+        elif action == 4:
+            self.repair_in_row += 1
+            self.repair_count_A += 1
+            reward -= self._scaled_cost(self.cost_post_A, self.repair_count_A)
+            self.pointer_A = self._restore_point(self.repair_count_A)
+
+        elif action == 5:
+            self.repair_in_row += 1
+            self.repair_count_B += 1
+            reward -= self._scaled_cost(self.cost_post_B, self.repair_count_B)
+            self.pointer_B = self._restore_point(self.repair_count_B)
+
+        elif action == 6:
+            self.repair_in_row += 1
+            self.repair_count_A += 1
+            self.repair_count_B += 1
+            max_count = max(self.repair_count_A, self.repair_count_B)
+            reward -= self._scaled_cost(self.cost_post_AB, max_count)
+            self.pointer_A = self._restore_point(self.repair_count_A)
+            self.pointer_B = self._restore_point(self.repair_count_B)
 
         elif action == 7:
             self.repair_in_row = 0
             reward -= self.cost_replace
             self.repair_count_A = 0
             self.repair_count_B = 0
-            self.pointer = 0
+            self.pointer_A = 0
+            self.pointer_B = 0
 
         if self.repair_in_row >= self.max_repair_in_row:
             done = True
             reward -= self.penalty_over_repair
 
-        if self.pointer >= self.seq_len - 1:
+        if self.pointer_A >= self.seq_len - 1 or self.pointer_B >= self.seq_len - 1:
             done = True
             reward -= self.penalty_break
 
