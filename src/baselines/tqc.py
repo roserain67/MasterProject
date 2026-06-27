@@ -127,6 +127,13 @@ def train(cfg, encoder_model=None, train_sequences=None, test_by_unit=None):
             if ep <= curriculum_ep:
                 probs[4], probs[5], probs[6] = probs[4] * 0.1, probs[5] * 0.1, probs[6] * 0.1
                 probs = probs / probs.sum()
+            degradation_progress = s[-1]
+            if degradation_progress > 0.6:
+                boost = 3.0 if degradation_progress > 0.8 else 2.0
+                probs[1] *= boost
+                probs[2] *= boost
+                probs[3] *= boost
+                probs = probs / probs.sum()
             action = np.random.choice(n_actions, p=probs)
             s2, r, done, _ = env.step(action)
             r_clipped = np.clip(r, -reward_clip, reward_clip)
@@ -207,7 +214,7 @@ def _run_test(encoder_model, actor, test_by_unit, log_dir, state_dim, n_actions,
             s = env.reset()
             episode_reward = 0
             episode_actions = []
-            for _ in range(min(200, len(seq))):
+            for _ in range(200):
                 s_t = torch.tensor(s, dtype=torch.float32, device=DEVICE).unsqueeze(0)
                 with torch.no_grad():
                     probs = actor(s_t).cpu().numpy().flatten()

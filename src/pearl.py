@@ -194,7 +194,21 @@ def train(cfg):
                 probs[4], probs[5], probs[6] = probs[4] * 0.1, probs[5] * 0.1, probs[6] * 0.1
                 probs = probs / probs.sum()
 
-            action = np.random.choice(n_actions, p=probs)
+            degradation_progress = s[-1]
+
+            # 前 warmup_ep 个 episode：退化超过 70% 时强制维修
+            if ep <= warmup_ep and degradation_progress > 0.7:
+                action = np.random.choice([1, 2, 3])
+            # 退化后期提高维修采样率
+            elif degradation_progress > 0.6:
+                boost = 3.0 if degradation_progress > 0.8 else 2.0
+                probs[1] *= boost
+                probs[2] *= boost
+                probs[3] *= boost
+                probs = probs / probs.sum()
+                action = np.random.choice(n_actions, p=probs)
+            else:
+                action = np.random.choice(n_actions, p=probs)
             ep_entropies.append(-np.sum(probs * np.log(probs + 1e-8)))
             ep_z_norms.append(float(torch.norm(z).item()))
 
@@ -379,7 +393,7 @@ def evaluate(encoder_model, actor, context_encoder, test_sequences,
         episode_reward = 0
         episode_actions = []
 
-        for t in range(min(200, len(seq))):
+        for t in range(200):
             s_t = torch.tensor(s, dtype=torch.float32, device=DEVICE).unsqueeze(0)
             ctx = ctxbuf.sample_context()
             ctx_t = torch.zeros((1, context_input_dim), device=DEVICE) if ctx is None else torch.tensor(ctx, dtype=torch.float32, device=DEVICE).unsqueeze(0)
