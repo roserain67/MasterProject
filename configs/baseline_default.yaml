@@ -18,9 +18,9 @@ lr_actor: 3.0e-4
 lr_critic: 3.0e-4
 
 # 探索
-init_temp: 1.2
+init_temp: 2.0
 temp_decay_ep: 400
-entropy_coef: 0.05
+entropy_coef: 0.15
 
 # Critic 稳定性
 tau: 0.005

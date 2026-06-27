@@ -28,14 +28,17 @@ class MaintenanceEnv(gym.Env):
 
         self.action_space = spaces.Discrete(8)
 
-        self.reward_step = 1.0
+        self.reward_step_max = 2.0
+        self.reward_step_min = 0.5
         self.reward_prev_base = 10.0
         self.cost_post_A = 35.0
         self.cost_post_B = 35.0
         self.cost_post_AB = 50.0
         self.cost_replace = 80.0
-        self.penalty_break = 100.0
+        self.penalty_break = 300.0
         self.penalty_over_repair = 50.0
+        self.degradation_risk_threshold = 0.8
+        self.degradation_risk_cost = 1.0
 
         self.step_size = step_size
         self.cost_alpha = cost_alpha
@@ -74,13 +77,20 @@ class MaintenanceEnv(gym.Env):
         self.state = self.encode_state()
         return self.state
 
+    def _get_reward_step(self):
+        progress = self.pointer / max(1, self.seq_len - 1)
+        if progress <= 0.5:
+            return self.reward_step_max
+        return self.reward_step_max - (self.reward_step_max - self.reward_step_min) * (progress - 0.5) / 0.5
+
     def step(self, action):
         reward = 0
         done = False
+        reward_step = self._get_reward_step()
 
         if action == 0:
             self.repair_in_row = 0
-            reward += self.reward_step
+            reward += reward_step
             self.pointer += 1
 
         elif action in [1, 2, 3]:
@@ -113,7 +123,7 @@ class MaintenanceEnv(gym.Env):
                 cost = self._scaled_cost(self.cost_post_B, self.repair_count_B)
             else:
                 cost = self._scaled_cost(self.cost_post_AB, max_count)
-            reward -= (cost + self.reward_step)
+            reward -= (cost + reward_step)
             rp_A = self._restore_point(self.repair_count_A) if action in [4, 6] else self.pointer
             rp_B = self._restore_point(self.repair_count_B) if action in [5, 6] else self.pointer
             self.pointer = max(rp_A, rp_B)
@@ -131,8 +141,12 @@ class MaintenanceEnv(gym.Env):
 
         if self.pointer >= self.seq_len - 1:
             done = True
-            if action == 0:
-                reward -= self.penalty_break
+            reward -= self.penalty_break
+
+        if not done:
+            progress = self.pointer / max(1, self.seq_len - 1)
+            if progress > self.degradation_risk_threshold:
+                reward -= self.degradation_risk_cost
 
         if not done:
             self.state = self.encode_state()

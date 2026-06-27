@@ -129,7 +129,8 @@ def train(cfg):
     max_len = cfg["max_len"]
     gamma = cfg["gamma"]
     batch_size = cfg["batch_size"]
-    entropy_coef = cfg["entropy_coef"]
+    entropy_coef_init = cfg["entropy_coef"]
+    entropy_coef_final = 0.05
     init_temp = cfg["init_temp"]
     temp_decay_ep = cfg["temp_decay_ep"]
     tau = cfg["tau"]
@@ -158,6 +159,7 @@ def train(cfg):
     for ep in range(1, num_episodes + 1):
         ctxbuf.clear()
         temp = max(1.0, init_temp - (init_temp - 1.0) * max(0, ep - temp_decay_ep) / max(1, num_episodes - temp_decay_ep))
+        entropy_coef = entropy_coef_init - (entropy_coef_init - entropy_coef_final) * min(1.0, ep / (num_episodes * 0.5))
 
         idx = random.randint(0, len(train_sequences) - 1)
         seq = train_sequences[idx]

@@ -23,9 +23,9 @@ lr_actor: 2.0e-4
 lr_critic: 5.0e-5
 
 # 探索
-init_temp: 1.4
-temp_decay_ep: 300
-entropy_coef: 0.05
+init_temp: 2.0
+temp_decay_ep: 400
+entropy_coef: 0.15
 
 # Critic 稳定性
 tau: 0.005
@@ -36,13 +36,13 @@ grad_clip: 0.5
 # Replay buffer
 good_capacity: 80
 recent_capacity: 40
-replay_good_thresh: 120
+replay_good_thresh: 0
 replay_min_thresh: -3000
 
 # Curriculum & Collapse
 curriculum_ep: 150
 warmup_ep: 25
-collapse_thresh: 80
+collapse_thresh: -50
 collapse_window: 8
 
 # 测试
