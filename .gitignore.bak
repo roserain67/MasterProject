@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+*.so
+logs/
+*.log
+SAC-logs/
+*.pkl
+*.npy
+*.h5
+*.pt
+*.pth
+*.zip
+*.tar.gz
+.vscode/
+.idea/
+.DS_Store
