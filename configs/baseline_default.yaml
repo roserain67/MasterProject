@@ -1,0 +1,51 @@
+# 基线算法默认配置 (SAC / TD3 / TQC 通用)
+data_base: "1数据处理/DS02/feature_all"
+train_units: [16, 18, 20]
+test_units: [14, 15]
+
+# 环境
+state_dim: 65
+n_actions: 8
+
+# 训练
+num_episodes: 500
+max_len: 200
+batch_size: 64
+gamma: 0.99
+
+# 学习率
+lr_actor: 3.0e-4
+lr_critic: 3.0e-4
+
+# 探索
+init_temp: 1.2
+temp_decay_ep: 400
+entropy_coef: 0.05
+
+# Critic 稳定性
+tau: 0.005
+reward_clip: 200
+td_clip: 800
+grad_clip: 0.5
+
+# Curriculum
+curriculum_ep: 150
+
+# Replay buffer
+replay_capacity: 50000
+
+# TQC 专用
+n_quantiles: 5
+quantile_huber_kappa: 1.0
+
+# TD3 专用
+policy_delay: 2
+
+# 测试
+test_episodes: 100
+
+# GRU 预训练
+pretrain_path: "pretrain/gru_pretrained.pt"
+
+# 日志 (会被 train_baseline.py 按算法名覆盖)
+log_dir: "logs/baseline"
