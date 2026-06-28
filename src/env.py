@@ -35,8 +35,8 @@ class MaintenanceEnv(gym.Env):
         self.action_space = spaces.Discrete(5)
 
         self.R_run = 3.0
-        self.C_prev = 8.0
-        self.C_prev_AB = 12.0
+        self.C_prev = 3.0
+        self.C_prev_AB = 5.0
         self.C_replace = 40.0
         self.penalty_break = 200.0
         self.penalty_over_repair = 100.0
