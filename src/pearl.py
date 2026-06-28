@@ -250,30 +250,24 @@ def train(cfg):
 
                     loss_c = F.smooth_l1_loss(q_a, td_target, beta=50.0)
 
+                    q_all = critic(bs, z_b_for_critic).detach()
                     probs_b = actor(bs, z_b)
-                    logp = torch.log(probs_b.gather(1, ba.unsqueeze(1)).squeeze(1) + 1e-8)
-                    advantage = (td_target - q_a).detach()
-                    advantage = (advantage - advantage.mean()) / (advantage.std() + 1e-8)
-                    loss_a = -(logp * advantage).mean()
-                    entropy = -(probs_b * torch.log(probs_b + 1e-8)).sum(dim=1).mean()
-                    loss_a = loss_a - entropy_coef * entropy
+                    log_probs = torch.log(probs_b + 1e-8)
+                    loss_a = (probs_b * (entropy_coef * log_probs - q_all)).sum(dim=1).mean()
 
                     kl = -0.5 * (1 + logvar_b - mu_b.pow(2) - logvar_b.exp()).mean()
                     reg = 0.1 * (mu_b.pow(2).mean() + logvar_b.exp().mean()) + 0.2 * kl
 
                     opt_critic.zero_grad()
+                    loss_c.backward()
+                    torch.nn.utils.clip_grad_norm_(critic.parameters(), grad_clip)
+                    opt_critic.step()
+                    for p, pt in zip(critic.parameters(), critic_target.parameters()):
+                        pt.data.copy_(tau * p.data + (1 - tau) * pt.data)
+
                     opt_actor.zero_grad()
                     opt_enc.zero_grad()
-
-                    update_critic = (total_steps % 2 == 0)
-                    total_loss = (loss_c if update_critic else loss_c.detach()) + loss_a + reg
-                    total_loss.backward()
-
-                    if update_critic:
-                        torch.nn.utils.clip_grad_norm_(critic.parameters(), grad_clip)
-                        opt_critic.step()
-                        for p, pt in zip(critic.parameters(), critic_target.parameters()):
-                            pt.data.copy_(tau * p.data + (1 - tau) * pt.data)
+                    (loss_a + reg).backward()
                     torch.nn.utils.clip_grad_norm_(list(actor.parameters()) + list(context_encoder.parameters()), grad_clip)
                     opt_actor.step()
                     opt_enc.step()
