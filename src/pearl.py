@@ -275,7 +275,7 @@ def train(cfg):
                     opt_enc.step()
 
                     entropy = -(probs_b.detach() * log_probs.detach()).sum(dim=1).mean()
-                    loss_alpha = -(log_alpha * (entropy - target_entropy).detach()).mean()
+                    loss_alpha = (log_alpha * (entropy - target_entropy).detach()).mean()
                     opt_alpha.zero_grad()
                     loss_alpha.backward()
                     opt_alpha.step()
