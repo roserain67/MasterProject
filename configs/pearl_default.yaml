@@ -12,7 +12,7 @@ z_dim: 8
 context_k: 16
 
 # 训练
-num_episodes: 900
+num_episodes: 1200
 max_len: 200
 batch_size: 64
 gamma: 0.99
