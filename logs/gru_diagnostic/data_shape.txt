@@ -1,5 +1,5 @@
-unit14: shape=(76, 172), dtype=float32, min=-3.7660, max=5.8414, nan=0, inf=0
-unit15: shape=(67, 172), dtype=float32, min=-4.8411, max=6.1389, nan=0, inf=0
-unit16: shape=(63, 172), dtype=float32, min=-5.0095, max=6.4477, nan=0, inf=0
-unit18: shape=(71, 172), dtype=float32, min=-5.1799, max=7.2560, nan=0, inf=0
-unit20: shape=(66, 172), dtype=float32, min=-4.2500, max=7.5759, nan=0, inf=0
+unit14: shape=(76, 172), dtype=float32, min=nan, max=nan, nan=304, inf=0
+unit15: shape=(67, 172), dtype=float32, min=nan, max=nan, nan=268, inf=0
+unit16: shape=(63, 172), dtype=float32, min=nan, max=nan, nan=252, inf=0
+unit18: shape=(71, 172), dtype=float32, min=nan, max=nan, nan=284, inf=0
+unit20: shape=(66, 172), dtype=float32, min=nan, max=nan, nan=264, inf=0

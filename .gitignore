@@ -60,3 +60,5 @@ feature_all/
 1数据处理/DS02/*.csv
 1数据处理/DS02/*.pth
 1数据处理/DS02/*.png
+
+!logs/
