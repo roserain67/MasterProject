@@ -26,6 +26,11 @@ from sklearn.preprocessing import StandardScaler
 # 参数
 # ============================================================
 UNITS = [14, 15, 16, 18, 20]
+
+# 自动定位到 1数据处理/DS02/ 目录，无论从哪里运行
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+os.chdir(SCRIPT_DIR)
+
 FEATURE_ALL = "feature_all"
 OUTPUT_DIR = os.path.join(FEATURE_ALL, "unified")
 K = 32  # 保留的传感器特征数量
