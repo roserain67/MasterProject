@@ -21,6 +21,9 @@ from sklearn.metrics import r2_score, silhouette_score
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from src.utils.paths import find_project_root, project_path
+os.chdir(find_project_root())
+
 from src.encoder import load_gru_encoder
 from src.utils.data_loader import load_sequences
 
@@ -256,7 +259,7 @@ def main():
     encoder = load_gru_encoder("pretrain/gru_pretrained.pt")
 
     all_units = [14, 15, 16, 18, 20]
-    sequences, unit_ids = load_sequences("1数据处理/DS02/feature_all", all_units)
+    sequences, unit_ids = load_sequences("1数据处理/DS02/feature_all/unified", all_units)
     print(f"加载了 {len(sequences)} 条序列, units: {sorted(set(unit_ids))}")
     for uid in sorted(set(unit_ids)):
         idx = [i for i, u in enumerate(unit_ids) if u == uid]

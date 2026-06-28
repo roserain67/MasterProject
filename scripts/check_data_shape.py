@@ -1,6 +1,11 @@
 """检查各 unit 的 trajectory_complete.npy shape 和数值范围，结果写入 logs/gru_diagnostic/data_shape.txt"""
 import numpy as np
 import os
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+from src.utils.paths import find_project_root
+os.chdir(find_project_root())
 
 BASE = "1数据处理/DS02/feature_all/unified"
 UNITS = [14, 15, 16, 18, 20]

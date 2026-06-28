@@ -16,6 +16,10 @@ from sklearn.metrics import r2_score
 from scipy.stats import spearmanr
 import os, sys
 
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+from src.utils.paths import find_project_root
+os.chdir(find_project_root())
+
 plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'DejaVu Sans']
 plt.rcParams['axes.unicode_minus'] = False
 
@@ -33,7 +37,6 @@ def log(msg):
     report_lines.append(msg)
 
 # ---------- 加载 GRU ----------
-sys.path.insert(0, ".")
 from src.encoder import load_gru_encoder
 
 encoder = load_gru_encoder(PRETRAIN_PATH).eval().to(DEVICE)

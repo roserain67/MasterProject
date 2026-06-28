@@ -11,9 +11,10 @@
     ├── global_scaler.pkl
     ├── feature_importance.csv
     └── unit{14,15,16,18,20}/
-        ├── trajectory_complete.npy
-        ├── enhanced_features_complete.csv
-        └── quality_analysis.csv
+        └── feature_selected/
+            ├── trajectory_complete.npy
+            ├── enhanced_features_complete.csv
+            └── quality_analysis.csv
 """
 import os
 import numpy as np
@@ -62,11 +63,27 @@ def load_all_units():
 
 
 def global_correlation_filter(unit_dfs):
-    """在合并数据上做相关性去重，返回统一的候选传感器特征列表"""
-    merged = pd.concat(unit_dfs.values(), ignore_index=True)
+    """在合并数据上做相关性去重，返回统一的候选传感器特征列表。
+    先排除在任何 unit 中 100% 为 NaN 的特征。"""
+    # 排除在任一 unit 中全部缺失的特征
+    all_cols = list(unit_dfs[UNITS[0]].columns)
+    valid_cols = []
+    for f in all_cols:
+        if f in MANDATORY_ALL:
+            continue
+        all_present = True
+        for uid, df in unit_dfs.items():
+            if f not in df.columns or df[f].isna().all():
+                all_present = False
+                print(f"    排除 {f}: unit{uid} 中 100% NaN")
+                break
+        if all_present:
+            valid_cols.append(f)
 
-    all_cols = merged.columns.tolist()
-    sensor_features = [f for f in all_cols if f not in MANDATORY_ALL]
+    print(f"  各 unit 均有效的传感器特征数: {len(valid_cols)}")
+
+    merged = pd.concat(unit_dfs.values(), ignore_index=True)
+    sensor_features = valid_cols
     print(f"  合并后传感器特征数: {len(sensor_features)}")
 
     if len(sensor_features) <= 1:
@@ -192,7 +209,7 @@ def prepare_for_gru_unified(features_df, feature_cols, global_mean, global_std,
         df[f + '_inf_flag'] = np.isinf(df[f]).astype(int)
         df[f] = df[f].replace([np.inf, -np.inf], np.nan)
 
-    # 2. 计算 per-unit 中位数（用于缺失值填充，这里用 per-unit 是正确的）
+    # 2. 计算 per-unit 中位数（用于缺失值填充）
     local_median = df[feature_cols].median()
 
     # 3. 逐时间点处理
@@ -212,6 +229,7 @@ def prepare_for_gru_unified(features_df, feature_cols, global_mean, global_std,
                 row[f + '_mask'] = 0
                 if last_obs[f] == -9999:
                     row[f + '_imputed'] = local_median[f]
+                    row[f + '_delta'] = max_delta
                 else:
                     row[f + '_imputed'] = df.at[last_obs[f], f]
                     row[f + '_delta'] = min(t - last_obs[f], max_delta)
@@ -275,7 +293,7 @@ def generate_trajectories(unit_dfs, selected_features, global_mean, global_std):
     """对每个 unit 生成 trajectory_complete.npy"""
     results = {}
     for uid, df in unit_dfs.items():
-        unit_dir = os.path.join(OUTPUT_DIR, f"unit{uid}")
+        unit_dir = os.path.join(OUTPUT_DIR, f"unit{uid}", "feature_selected")
         os.makedirs(unit_dir, exist_ok=True)
 
         df_reset = df.reset_index() if df.index.name == 'cycle' else df.copy()

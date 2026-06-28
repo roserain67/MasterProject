@@ -12,6 +12,9 @@ import torch.optim as optim
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from src.utils.paths import find_project_root
+os.chdir(find_project_root())
+
 from src.encoder import GRUEncoder
 from src.utils.data_loader import load_sequences
 
@@ -80,7 +83,7 @@ def train(data_base, unit_ids, save_path, epochs=100, batch_size=32):
 
 def main():
     parser = argparse.ArgumentParser(description="GRU 预训练")
-    parser.add_argument("--data_base", type=str, default="1数据处理/DS02/feature_all")
+    parser.add_argument("--data_base", type=str, default="1数据处理/DS02/feature_all/unified")
     parser.add_argument("--units", type=int, nargs="+", default=[14, 16, 18, 20])
     parser.add_argument("--save_path", type=str, default="pretrain/gru_pretrained.pt")
     parser.add_argument("--epochs", type=int, default=100)

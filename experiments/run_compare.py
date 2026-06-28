@@ -6,6 +6,9 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from src.utils.paths import find_project_root
+os.chdir(find_project_root())
+
 from src.encoder import load_gru_encoder
 from src.utils.data_loader import load_sequences
 

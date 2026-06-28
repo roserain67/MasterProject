@@ -11,6 +11,11 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from src.utils.paths import find_project_root
+os.chdir(find_project_root())
+
 plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'SimSun', 'DejaVu Sans']
 plt.rcParams['axes.unicode_minus'] = False
 
