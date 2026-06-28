@@ -5,7 +5,7 @@ test_units: [14, 15]
 
 # 环境
 state_dim: 2
-n_actions: 8
+n_actions: 5
 no_gru: true
 
 # PEARL 架构

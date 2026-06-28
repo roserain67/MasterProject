@@ -5,7 +5,7 @@ test_units: [14, 15]
 
 # 环境
 state_dim: 66
-n_actions: 8
+n_actions: 5
 
 # PEARL 架构
 z_dim: 8
