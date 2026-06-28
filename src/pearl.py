@@ -145,8 +145,6 @@ def train(cfg):
     replay_good_thresh = cfg["replay_good_thresh"]
     replay_min_thresh = cfg["replay_min_thresh"]
     curriculum_ep = cfg["curriculum_ep"]
-    collapse_thresh = cfg["collapse_thresh"]
-    collapse_window = cfg["collapse_window"]
 
     # ---------- 日志 ----------
     log_dir = cfg["log_dir"]
@@ -156,8 +154,6 @@ def train(cfg):
     losses_actor = []
     losses_critic = []
     total_steps = 0
-    best_reward = -np.inf
-    low_reward_streak = 0
 
     # ---------- 训练循环 ----------
     for ep in range(1, num_episodes + 1):
@@ -281,24 +277,6 @@ def train(cfg):
         min_th = -9999 if ep <= warmup_ep else replay_min_thresh
         replay.push_episode(ep_transitions, episode_reward, unit_id, replay_good_thresh, min_th)
 
-        if episode_reward < collapse_thresh:
-            low_reward_streak += 1
-        else:
-            low_reward_streak = 0
-        best_path = os.path.join(log_dir, "best_model.pt")
-        if low_reward_streak >= collapse_window and os.path.exists(best_path):
-            ckpt = torch.load(best_path, map_location=DEVICE)
-            actor.load_state_dict(ckpt["actor"])
-            context_encoder.load_state_dict(ckpt["encoder"])
-            critic.load_state_dict(ckpt["critic"])
-            critic_target.load_state_dict(critic.state_dict())
-            for g in opt_actor.param_groups:
-                g["lr"] *= 0.5
-            for g in opt_enc.param_groups:
-                g["lr"] *= 0.5
-            low_reward_streak = 0
-            print(f"Ep {ep}: 塌缩恢复，已加载 best_model，LR 减半")
-
         mean_entropy = float(np.mean(ep_entropies)) if ep_entropies else 0.0
         mean_z_norm = float(np.mean(ep_z_norms)) if ep_z_norms else 0.0
         records.append({
@@ -306,15 +284,6 @@ def train(cfg):
             "action_entropy": mean_entropy, "z_norm": mean_z_norm,
             "actions": Counter(episode_actions)
         })
-
-        if episode_reward > best_reward and episode_reward > 50:
-            best_reward = episode_reward
-            torch.save({
-                "actor": actor.state_dict(),
-                "encoder": context_encoder.state_dict(),
-                "critic": critic.state_dict(),
-            }, best_path)
-            print(f"Ep {ep}: reward={episode_reward:.2f} [best saved]")
 
         if ep % 10 == 0:
             print(f"Ep {ep}: reward={episode_reward:.2f}  action_entropy={mean_entropy:.4f}  z_norm={mean_z_norm:.4f}")
