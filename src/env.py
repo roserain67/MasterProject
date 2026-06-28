@@ -69,7 +69,7 @@ class MaintenanceEnv(gym.Env):
         return max(self._progress_A(), self._progress_B())
 
     def _get_reward_step(self):
-        return 5.0
+        return 3.0
 
     def _get_preventive_reward(self, progress, count):
         base_reward = 15.0 * progress
@@ -168,7 +168,6 @@ class MaintenanceEnv(gym.Env):
             self.pointer_B = min(self.pointer_B, self._restore_point(self.repair_count_B))
 
         elif action == 7:
-            self.repair_in_row = 0
             reward -= self.cost_replace
             reward -= step_reward
             self.repair_count_A = 0
