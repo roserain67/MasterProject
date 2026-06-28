@@ -15,9 +15,16 @@ with open("configs/pearl_default.yaml", "r", encoding="utf-8") as f:
     base_cfg = yaml.safe_load(f)
 
 sweeps = [
-    {"entropy_coef": 0.05, "init_temp": 1.4, "temp_decay_ep": 300},
-    {"entropy_coef": 0.08, "init_temp": 2.0, "temp_decay_ep": 600},
-    {"entropy_coef": 0.10, "init_temp": 2.0, "temp_decay_ep": 600},
+    # 基线（之前已证明锁死太快）
+    {"entropy_coef": 0.05, "entropy_coef_final": 0.02, "init_temp": 1.4, "temp_decay_ep": 300},
+    # 当前默认
+    {"entropy_coef": 0.08, "entropy_coef_final": 0.05, "init_temp": 2.0, "temp_decay_ep": 600},
+    # 中等
+    {"entropy_coef": 0.15, "entropy_coef_final": 0.08, "init_temp": 2.5, "temp_decay_ep": 500},
+    # 激进
+    {"entropy_coef": 0.25, "entropy_coef_final": 0.10, "init_temp": 3.0, "temp_decay_ep": 400},
+    # 非常激进
+    {"entropy_coef": 0.35, "entropy_coef_final": 0.15, "init_temp": 4.0, "temp_decay_ep": 500},
 ]
 
 for i, params in enumerate(sweeps):

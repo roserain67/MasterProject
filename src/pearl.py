@@ -134,7 +134,7 @@ def train(cfg):
     gamma = cfg["gamma"]
     batch_size = cfg["batch_size"]
     entropy_coef_init = cfg["entropy_coef"]
-    entropy_coef_final = 0.05
+    entropy_coef_final = cfg.get("entropy_coef_final", 0.05)
     init_temp = cfg["init_temp"]
     temp_decay_ep = cfg["temp_decay_ep"]
     tau = cfg["tau"]

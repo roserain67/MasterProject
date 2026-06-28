@@ -42,6 +42,9 @@ class MaintenanceEnv(gym.Env):
         self.penalty_over_repair = 100.0
         self.survival_bonus = 50.0
 
+        self.shaping_k = 3.0
+        self.gamma = 0.99
+
         self.step_size = step_size
         self.cost_alpha = cost_alpha
 
@@ -53,6 +56,9 @@ class MaintenanceEnv(gym.Env):
         self.max_repair_in_row = 10
         self.current_step = 0
         self.state = None
+
+    def _potential(self):
+        return -self.shaping_k * (self.pointer_A + self.pointer_B) / self.seq_len
 
     def _restore_point(self, count):
         return min((count - 1) * self.step_size, self.seq_len - 1)
@@ -90,6 +96,7 @@ class MaintenanceEnv(gym.Env):
         reward = 0.0
         done = False
         self.current_step += 1
+        phi_old = self._potential()
 
         # Phase 1: 维修动作
         if action == 0:
@@ -130,6 +137,10 @@ class MaintenanceEnv(gym.Env):
 
         # Phase 3: 运营收益（无条件）
         reward += self.R_run
+
+        # Phase 3.5: Potential-based reward shaping
+        phi_new = self._potential()
+        reward += self.gamma * phi_new - phi_old
 
         # Phase 4: 终止检查
         if self.repair_in_row >= self.max_repair_in_row:
