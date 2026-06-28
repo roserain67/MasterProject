@@ -42,7 +42,7 @@ class MaintenanceEnv(gym.Env):
         self.penalty_over_repair = 100.0
         self.survival_bonus = 50.0
 
-        self.shaping_k = 3.0
+        self.shaping_k = 60.0
         self.gamma = 0.99
 
         self.step_size = step_size
