@@ -255,7 +255,7 @@ def prepare_for_gru_unified(features_df, feature_cols, global_mean, global_std,
 
 
 def build_full_trajectory(df_prepared, feature_cols):
-    """构建完整退化轨迹 (T, 172)"""
+    """构建完整退化轨迹 (T, 43)，只保留标准化后的特征值"""
     T = len(df_prepared)
     trajectory = []
     for t in range(T):
@@ -263,9 +263,6 @@ def build_full_trajectory(df_prepared, feature_cols):
         v = []
         for f in feature_cols:
             v.append(row[f + '_imputed'])
-            v.append(row[f + '_mask'])
-            v.append(row[f + '_delta'])
-            v.append(row[f + '_outlier'])
         trajectory.append(v)
     return np.array(trajectory, dtype=np.float32)
 

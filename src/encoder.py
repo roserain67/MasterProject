@@ -6,7 +6,7 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 class GRUEncoder(nn.Module):
-    def __init__(self, input_dim=172, hidden_dim=128, num_layers=2, dropout=0.1):
+    def __init__(self, input_dim=43, hidden_dim=128, num_layers=2, dropout=0.1):
         super().__init__()
         self.gru = nn.GRU(
             input_size=input_dim,
