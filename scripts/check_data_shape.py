@@ -2,7 +2,7 @@
 import numpy as np
 import os
 
-BASE = "1数据处理/DS02/feature_all"
+BASE = "1数据处理/DS02/feature_all/unified"
 UNITS = [14, 15, 16, 18, 20]
 OUT_DIR = "logs/gru_diagnostic"
 os.makedirs(OUT_DIR, exist_ok=True)

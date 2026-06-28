@@ -19,7 +19,7 @@ import os, sys
 plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'DejaVu Sans']
 plt.rcParams['axes.unicode_minus'] = False
 
-BASE = "1数据处理/DS02/feature_all"
+BASE = "1数据处理/DS02/feature_all/unified"
 PRETRAIN_PATH = "pretrain/gru_pretrained.pt"
 UNITS = [14, 15, 16, 18, 20]
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")

@@ -1,5 +1,5 @@
 # PEARL 默认配置
-data_base: "1数据处理/DS02/feature_all"
+data_base: "1数据处理/DS02/feature_all/unified"
 train_units: [16, 18, 20]
 test_units: [14, 15]
 

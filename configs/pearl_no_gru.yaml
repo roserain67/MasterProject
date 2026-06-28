@@ -1,5 +1,5 @@
 # PEARL 无 GRU 对照实验 — state = [pos_A, pos_B] 仅 2 维
-data_base: "1数据处理/DS02/feature_all"
+data_base: "1数据处理/DS02/feature_all/unified"
 train_units: [16, 18, 20]
 test_units: [14, 15]
 
