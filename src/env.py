@@ -69,13 +69,7 @@ class MaintenanceEnv(gym.Env):
         return max(self._progress_A(), self._progress_B())
 
     def _get_reward_step(self):
-        progress = self._max_progress()
-        if progress <= 0.5:
-            return 3.0
-        elif progress <= 0.8:
-            return 3.0 - 5.0 * (progress - 0.5) / 0.3
-        else:
-            return -2.0 - 3.0 * (progress - 0.8) / 0.2
+        return 5.0
 
     def _get_preventive_reward(self, progress, count):
         base_reward = 15.0 * progress
@@ -129,14 +123,14 @@ class MaintenanceEnv(gym.Env):
             self.repair_count_A += 1
             reward += self._get_preventive_reward(self._progress_A(), self.repair_count_A)
             reward -= step_reward
-            self.pointer_A = self._restore_point(self.repair_count_A)
+            self.pointer_A = min(self.pointer_A, self._restore_point(self.repair_count_A))
 
         elif action == 2:
             self.repair_in_row += 1
             self.repair_count_B += 1
             reward += self._get_preventive_reward(self._progress_B(), self.repair_count_B)
             reward -= step_reward
-            self.pointer_B = self._restore_point(self.repair_count_B)
+            self.pointer_B = min(self.pointer_B, self._restore_point(self.repair_count_B))
 
         elif action == 3:
             self.repair_in_row += 1
@@ -146,22 +140,22 @@ class MaintenanceEnv(gym.Env):
             r_b = self._get_preventive_reward(self._progress_B(), self.repair_count_B)
             reward += (r_a + r_b) * 0.8
             reward -= step_reward
-            self.pointer_A = self._restore_point(self.repair_count_A)
-            self.pointer_B = self._restore_point(self.repair_count_B)
+            self.pointer_A = min(self.pointer_A, self._restore_point(self.repair_count_A))
+            self.pointer_B = min(self.pointer_B, self._restore_point(self.repair_count_B))
 
         elif action == 4:
             self.repair_in_row += 1
             self.repair_count_A += 1
             reward -= self._scaled_cost(self.cost_post_A, self.repair_count_A)
             reward -= step_reward
-            self.pointer_A = self._restore_point(self.repair_count_A)
+            self.pointer_A = min(self.pointer_A, self._restore_point(self.repair_count_A))
 
         elif action == 5:
             self.repair_in_row += 1
             self.repair_count_B += 1
             reward -= self._scaled_cost(self.cost_post_B, self.repair_count_B)
             reward -= step_reward
-            self.pointer_B = self._restore_point(self.repair_count_B)
+            self.pointer_B = min(self.pointer_B, self._restore_point(self.repair_count_B))
 
         elif action == 6:
             self.repair_in_row += 1
@@ -170,8 +164,8 @@ class MaintenanceEnv(gym.Env):
             max_count = max(self.repair_count_A, self.repair_count_B)
             reward -= self._scaled_cost(self.cost_post_AB, max_count)
             reward -= step_reward
-            self.pointer_A = self._restore_point(self.repair_count_A)
-            self.pointer_B = self._restore_point(self.repair_count_B)
+            self.pointer_A = min(self.pointer_A, self._restore_point(self.repair_count_A))
+            self.pointer_B = min(self.pointer_B, self._restore_point(self.repair_count_B))
 
         elif action == 7:
             self.repair_in_row = 0
