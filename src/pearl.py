@@ -124,7 +124,9 @@ def train(cfg):
         train_units=cfg["train_units"],
         good_capacity=cfg["good_capacity"],
         recent_capacity=cfg["recent_capacity"],
-        context_k=cfg["context_k"]
+        context_k=cfg["context_k"],
+        n_step=cfg.get("n_step", 1),
+        gamma=cfg["gamma"]
     )
     ctxbuf = ContextBuffer(context_k=cfg["context_k"])
 
@@ -145,6 +147,9 @@ def train(cfg):
     replay_good_thresh = cfg["replay_good_thresh"]
     replay_min_thresh = cfg["replay_min_thresh"]
     curriculum_ep = cfg["curriculum_ep"]
+
+    n_step = cfg.get("n_step", 1)
+    gamma_n = gamma ** n_step
 
     # ---------- 日志 ----------
     log_dir = cfg["log_dir"]
@@ -240,7 +245,7 @@ def train(cfg):
                     with torch.no_grad():
                         q_next = critic_target(bs2, z_b_for_critic).max(1)[0]
                         br_clipped = torch.clamp(br, -reward_clip, reward_clip)
-                        td_target = br_clipped + gamma * (1 - bd) * q_next
+                        td_target = br_clipped + gamma_n * (1 - bd) * q_next
                         td_target = torch.clamp(td_target, -td_clip, td_clip)
 
                     loss_c = F.smooth_l1_loss(q_a, td_target, beta=50.0)

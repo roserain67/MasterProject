@@ -4,11 +4,13 @@ from collections import deque
 
 
 class EpisodeReplayBuffer:
-    """按 episode 存储，支持多任务按 unit 分离采样"""
+    """按 episode 存储，支持多任务按 unit 分离采样，支持 n-step return"""
 
-    def __init__(self, train_units, good_capacity=80, recent_capacity=40, context_k=16):
+    def __init__(self, train_units, good_capacity=80, recent_capacity=40, context_k=16, n_step=1, gamma=0.99):
         self.train_units = list(train_units)
         self.context_k = context_k
+        self.n_step = n_step
+        self.gamma = gamma
         self.good_by_unit = {u: deque(maxlen=good_capacity) for u in self.train_units}
         self.recent_by_unit = {u: deque(maxlen=recent_capacity) for u in self.train_units}
 
@@ -20,6 +22,35 @@ class EpisodeReplayBuffer:
             self.good_by_unit[unit_id].append(item)
         if episode_reward >= min_threshold:
             self.recent_by_unit[unit_id].append(item)
+
+    def _sample_nstep(self, ep_transitions, n_samples):
+        """从 episode 中采样 n_samples 个 n-step transition"""
+        T = len(ep_transitions)
+        indices = random.choices(range(T), k=n_samples)
+        s_list, a_list, r_list, s2_list, d_list = [], [], [], [], []
+        for i in indices:
+            s_i, a_i, _, _, _ = ep_transitions[i]
+            G = 0.0
+            end = min(i + self.n_step, T)
+            gamma_k = 1.0
+            bootstrap_done = False
+            for j in range(i, end):
+                _, _, r_j, _, d_j = ep_transitions[j]
+                G += gamma_k * r_j
+                gamma_k *= self.gamma
+                if d_j:
+                    bootstrap_done = True
+                    s2_final = ep_transitions[j][3]
+                    break
+            else:
+                s2_final = ep_transitions[end - 1][3]
+            s_list.append(s_i)
+            a_list.append(a_i)
+            r_list.append(G)
+            s2_list.append(s2_final)
+            d_list.append(float(bootstrap_done))
+        return (np.array(s_list), np.array(a_list), np.array(r_list),
+                np.array(s2_list), np.array(d_list))
 
     def _context_from_transitions(self, transitions):
         k = min(self.context_k, len(transitions))
@@ -50,9 +81,7 @@ class EpisodeReplayBuffer:
                 if len(ep_transitions) < 2:
                     continue
                 n = min(n_per, len(ep_transitions))
-                indices = random.choices(range(len(ep_transitions)), k=n)
-                batch = [ep_transitions[i] for i in indices]
-                s, a, r, s2, d = map(np.asarray, zip(*batch))
+                s, a, r, s2, d = self._sample_nstep(ep_transitions, n)
                 ctx = self._context_from_transitions(ep_transitions)
                 s_list.append(s)
                 a_list.append(a)
@@ -70,9 +99,7 @@ class EpisodeReplayBuffer:
         if len(ep_transitions) < 2:
             return None
         n = min(batch_size, len(ep_transitions))
-        indices = random.choices(range(len(ep_transitions)), k=n)
-        batch = [ep_transitions[i] for i in indices]
-        s, a, r, s2, d = map(np.asarray, zip(*batch))
+        s, a, r, s2, d = self._sample_nstep(ep_transitions, n)
         ctx = self._context_from_transitions(ep_transitions)
         return s, a, r, s2, d, [(ctx, n)]
 

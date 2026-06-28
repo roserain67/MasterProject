@@ -16,6 +16,7 @@ num_episodes: 800
 max_len: 200
 batch_size: 64
 gamma: 0.99
+n_step: 20
 
 # 学习率
 lr_encoder: 4.0e-4
