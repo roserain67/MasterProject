@@ -120,6 +120,10 @@ def train(cfg):
     opt_actor = optim.Adam(actor.parameters(), lr=cfg["lr_actor"])
     opt_critic = optim.Adam(critic.parameters(), lr=cfg["lr_critic"])
 
+    target_entropy = -0.5 * np.log(1.0 / n_actions)
+    log_alpha = torch.tensor(np.log(cfg["entropy_coef"]), dtype=torch.float32, device=DEVICE, requires_grad=True)
+    opt_alpha = optim.Adam([log_alpha], lr=cfg["lr_actor"])
+
     replay = EpisodeReplayBuffer(
         train_units=cfg["train_units"],
         good_capacity=cfg["good_capacity"],
@@ -135,8 +139,6 @@ def train(cfg):
     max_len = cfg["max_len"]
     gamma = cfg["gamma"]
     batch_size = cfg["batch_size"]
-    entropy_coef_init = cfg["entropy_coef"]
-    entropy_coef_final = cfg.get("entropy_coef_final", 0.05)
     init_temp = cfg["init_temp"]
     temp_decay_ep = cfg["temp_decay_ep"]
     tau = cfg["tau"]
@@ -165,7 +167,6 @@ def train(cfg):
     for ep in range(1, num_episodes + 1):
         ctxbuf.clear()
         temp = max(1.0, init_temp - (init_temp - 1.0) * max(0, ep - temp_decay_ep) / max(1, num_episodes - temp_decay_ep))
-        entropy_coef = entropy_coef_init - (entropy_coef_init - entropy_coef_final) * min(1.0, ep / (num_episodes * 0.5))
 
         idx = random.randint(0, len(train_sequences) - 1)
         seq = train_sequences[idx]
@@ -250,10 +251,11 @@ def train(cfg):
 
                     loss_c = F.smooth_l1_loss(q_a, td_target, beta=50.0)
 
+                    alpha = log_alpha.exp().detach()
                     q_all = critic(bs, z_b_for_critic).detach()
                     probs_b = actor(bs, z_b)
                     log_probs = torch.log(probs_b + 1e-8)
-                    loss_a = (probs_b * (entropy_coef * log_probs - q_all)).sum(dim=1).mean()
+                    loss_a = (probs_b * (alpha * log_probs - q_all)).sum(dim=1).mean()
 
                     kl = -0.5 * (1 + logvar_b - mu_b.pow(2) - logvar_b.exp()).mean()
                     reg = 0.1 * (mu_b.pow(2).mean() + logvar_b.exp().mean()) + 0.2 * kl
@@ -271,6 +273,12 @@ def train(cfg):
                     torch.nn.utils.clip_grad_norm_(list(actor.parameters()) + list(context_encoder.parameters()), grad_clip)
                     opt_actor.step()
                     opt_enc.step()
+
+                    entropy = -(probs_b.detach() * log_probs.detach()).sum(dim=1).mean()
+                    loss_alpha = -(log_alpha * (entropy - target_entropy).detach()).mean()
+                    opt_alpha.zero_grad()
+                    loss_alpha.backward()
+                    opt_alpha.step()
 
                     losses_actor.append(loss_a.item())
                     losses_critic.append(loss_c.item())
