@@ -15,12 +15,16 @@ class MaintenanceEnv(gym.Env):
     """
     metadata = {"render_modes": []}
 
-    def __init__(self, sequence, encoder, state_dim=66, max_steps=200, step_size=5, cost_alpha=0.3):
+    def __init__(self, sequence, encoder, state_dim=66, max_steps=200, step_size=5, cost_alpha=0.3, no_gru=False):
         super().__init__()
 
         self.sequence = sequence.astype(np.float32)
         self.seq_len = sequence.shape[0]
-        self.encoder = encoder.eval().to(DEVICE)
+        self.no_gru = no_gru
+        if not no_gru:
+            self.encoder = encoder.eval().to(DEVICE)
+        else:
+            self.encoder = None
         self.max_steps = max_steps
 
         self.state_dim = state_dim
@@ -79,6 +83,12 @@ class MaintenanceEnv(gym.Env):
         return max(0, base_reward - cost_increase)
 
     def encode_state(self):
+        pos_a = np.array([self.pointer_A / max(1, self.seq_len)], dtype=np.float32)
+        pos_b = np.array([self.pointer_B / max(1, self.seq_len)], dtype=np.float32)
+
+        if self.no_gru:
+            return np.concatenate([pos_a, pos_b])
+
         seq_pointer = max(self.pointer_A, self.pointer_B)
         if seq_pointer == 0:
             seq = self.sequence[:1]
@@ -89,8 +99,6 @@ class MaintenanceEnv(gym.Env):
         with torch.no_grad():
             emb = self.encoder(seq_tensor)
         emb_np = emb.squeeze(0).cpu().numpy().astype(np.float32)
-        pos_a = np.array([self.pointer_A / max(1, self.seq_len)], dtype=np.float32)
-        pos_b = np.array([self.pointer_B / max(1, self.seq_len)], dtype=np.float32)
         return np.concatenate([emb_np, pos_a, pos_b])
 
     def reset(self):

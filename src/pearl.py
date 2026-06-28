@@ -100,7 +100,11 @@ def train(cfg):
         test_by_unit[cfg["test_units"][0]] = train_sequences[:min(10, len(train_sequences))]
 
     # ---------- 模型 ----------
-    encoder_model = load_gru_encoder(cfg.get("pretrain_path"))
+    no_gru = cfg.get("no_gru", False)
+    if no_gru:
+        encoder_model = None
+    else:
+        encoder_model = load_gru_encoder(cfg.get("pretrain_path"))
     state_dim = cfg["state_dim"]
     n_actions = cfg["n_actions"]
     z_dim = cfg["z_dim"]
@@ -164,7 +168,7 @@ def train(cfg):
         idx = random.randint(0, len(train_sequences) - 1)
         seq = train_sequences[idx]
         unit_id = train_unit_ids[idx]
-        env = MaintenanceEnv(seq, encoder_model, state_dim=state_dim)
+        env = MaintenanceEnv(seq, encoder_model, state_dim=state_dim, no_gru=no_gru)
         s = env.reset()
         episode_reward = 0
         episode_actions = []
@@ -331,7 +335,8 @@ def train(cfg):
     for unit_id, test_seqs in test_by_unit.items():
         test_results = evaluate(encoder_model, actor, context_encoder, test_seqs,
                                 state_dim, n_actions, context_input_dim,
-                                num_episodes=test_episodes, deterministic=deterministic)
+                                num_episodes=test_episodes, deterministic=deterministic,
+                                no_gru=no_gru)
         _save_test_results(test_results, unit_id, log_dir)
     print(f"全部测试结果已保存到 {log_dir}")
 
@@ -341,7 +346,7 @@ def train(cfg):
 # ======================================================
 def evaluate(encoder_model, actor, context_encoder, test_sequences,
              state_dim, n_actions, context_input_dim,
-             num_episodes=300, deterministic=True):
+             num_episodes=300, deterministic=True, no_gru=False):
     actor.eval()
     context_encoder.eval()
 
@@ -350,7 +355,7 @@ def evaluate(encoder_model, actor, context_encoder, test_sequences,
 
     for _ in range(min(3, len(test_sequences))):
         seq = random.choice(test_sequences)
-        env_pre = MaintenanceEnv(seq, encoder_model, state_dim=state_dim)
+        env_pre = MaintenanceEnv(seq, encoder_model, state_dim=state_dim, no_gru=no_gru)
         s = env_pre.reset()
         for _ in range(min(20, len(seq))):
             s_t = torch.tensor(s, dtype=torch.float32, device=DEVICE).unsqueeze(0)
@@ -370,7 +375,7 @@ def evaluate(encoder_model, actor, context_encoder, test_sequences,
 
     for ep_idx in range(num_episodes):
         seq = random.choice(test_sequences)
-        env = MaintenanceEnv(seq, encoder_model, state_dim=state_dim)
+        env = MaintenanceEnv(seq, encoder_model, state_dim=state_dim, no_gru=no_gru)
         s = env.reset()
         episode_reward = 0
         episode_actions = []
