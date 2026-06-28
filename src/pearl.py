@@ -191,7 +191,11 @@ def train(cfg):
                 probs = F.softmax(logits / temp, dim=-1).cpu().numpy().flatten()
             probs = probs / probs.sum()
 
-            action = np.random.choice(n_actions, p=probs)
+            eps_greedy = max(0.0, 0.3 * (1 - ep / 200))
+            if np.random.rand() < eps_greedy:
+                action = np.random.randint(n_actions)
+            else:
+                action = np.random.choice(n_actions, p=probs)
             ep_entropies.append(-np.sum(probs * np.log(probs + 1e-8)))
             ep_z_norms.append(float(torch.norm(z).item()))
 
