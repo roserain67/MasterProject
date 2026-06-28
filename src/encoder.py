@@ -17,8 +17,14 @@ class GRUEncoder(nn.Module):
         )
         self.output_layer = nn.Linear(hidden_dim, 64)
 
-    def forward(self, x):
-        output, h_n = self.gru(x)
+    def forward(self, x, lengths=None):
+        if lengths is not None:
+            packed = nn.utils.rnn.pack_padded_sequence(
+                x, lengths.cpu(), batch_first=True, enforce_sorted=False
+            )
+            _, h_n = self.gru(packed)
+        else:
+            _, h_n = self.gru(x)
         emb = self.output_layer(h_n[-1])
         return emb
 

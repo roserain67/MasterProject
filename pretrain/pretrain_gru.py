@@ -55,7 +55,8 @@ def train(data_base, unit_ids, save_path, epochs=100, batch_size=32):
             prefixes = [s[0] for s in batch]
             targets = torch.tensor([s[1] for s in batch], dtype=torch.float32, device=DEVICE)
 
-            max_len = max(p.shape[0] for p in prefixes)
+            lengths = torch.tensor([p.shape[0] for p in prefixes], dtype=torch.long)
+            max_len = int(lengths.max())
             padded = []
             for p in prefixes:
                 if p.shape[0] < max_len:
@@ -64,7 +65,7 @@ def train(data_base, unit_ids, save_path, epochs=100, batch_size=32):
                 padded.append(p)
             x = torch.tensor(np.stack(padded), dtype=torch.float32, device=DEVICE)
 
-            emb = model(x)
+            emb = model(x, lengths=lengths)
             pred = regressor(emb).squeeze(-1)
             loss = nn.functional.mse_loss(pred, targets)
             optimizer.zero_grad()
@@ -84,7 +85,7 @@ def train(data_base, unit_ids, save_path, epochs=100, batch_size=32):
 def main():
     parser = argparse.ArgumentParser(description="GRU 预训练")
     parser.add_argument("--data_base", type=str, default="1数据处理/DS02/feature_all/unified")
-    parser.add_argument("--units", type=int, nargs="+", default=[14, 16, 18, 20])
+    parser.add_argument("--units", type=int, nargs="+", default=[16, 18, 20])
     parser.add_argument("--save_path", type=str, default="pretrain/gru_pretrained.pt")
     parser.add_argument("--epochs", type=int, default=100)
     args = parser.parse_args()
