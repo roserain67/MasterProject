@@ -1,0 +1,40 @@
+GRU loaded, device=cuda
+unit14: 1 seq(s), seq_len=76, 76 embeddings
+unit15: 1 seq(s), seq_len=67, 67 embeddings
+unit16: 1 seq(s), seq_len=63, 63 embeddings
+unit18: 1 seq(s), seq_len=71, 71 embeddings
+unit20: 1 seq(s), seq_len=66, 66 embeddings
+
+=== 诊断1: PCA 轨迹可视化 ===
+PCA explained variance: [0.4712 0.1031 0.0673]
+Saved: pca_trajectories.png
+
+=== 诊断2: 冗余性检查 R² (GRU emb → progress) ===
+Global R²: 0.9538
+  unit14: R² = 0.9998
+  unit15: R² = 0.9998
+  unit16: R² = 1.0000
+  unit18: R² = 0.9999
+  unit20: R² = 1.0000
+结论: GRU 输出几乎等价于位置信息，64维没有额外价值
+
+=== 诊断3: 区分能力检查 (同一进度处不同 unit 是否可分) ===
+  progress=0.25: inter=0.2908, intra=0.1633, ratio=1.78 (可区分)
+  progress=0.5: inter=0.2738, intra=0.1716, ratio=1.60 (可区分)
+  progress=0.75: inter=0.2973, intra=0.1860, ratio=1.60 (可区分)
+Saved: unit_discriminability.png
+
+=== 诊断4: 每维与时间的单调性 (Spearman |ρ|) ===
+64维中: 高单调性(|ρ|>0.7)=10维, 低单调性(|ρ|<0.3)=14维
+平均 |ρ|: 0.4701
+Saved: monotonicity.png
+
+============================================================
+诊断汇总
+============================================================
+PCA explained variance (前3): [0.4712 0.1031 0.0673]
+R² (emb→progress): 0.9538
+高单调维度数: 10/64
+
+判定: GRU 编码了位置 + 部分额外信号
+建议: 保留 GRU 但需要统一特征后重新 pretrain 再判断
