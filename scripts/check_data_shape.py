@@ -9,7 +9,7 @@ os.makedirs(OUT_DIR, exist_ok=True)
 
 lines = []
 for uid in UNITS:
-    path = f"{BASE}/unit{uid}/feature_selected/trajectory_complete.npy"
+    path = f"{BASE}/unit{uid}/trajectory_complete.npy"
     try:
         d = np.load(path)
         line = (f"unit{uid}: shape={d.shape}, dtype={d.dtype}, "

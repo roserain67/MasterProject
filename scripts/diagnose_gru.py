@@ -43,7 +43,7 @@ log(f"GRU loaded, device={DEVICE}")
 unit_embeddings = {}
 
 for uid in UNITS:
-    path = f"{BASE}/unit{uid}/feature_selected/trajectory_complete.npy"
+    path = f"{BASE}/unit{uid}/trajectory_complete.npy"
     data = np.load(path).astype(np.float32)
     if data.ndim == 2:
         data = data[np.newaxis, :]

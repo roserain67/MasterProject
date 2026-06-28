@@ -11,9 +11,16 @@ def load_sequences(data_base_path, unit_ids, use_trajectory=True):
     all_unit_ids = []
     for unit_id in unit_ids:
         traj_path = os.path.join(data_base_path, f"unit{unit_id}", "feature_selected", "trajectory_complete.npy")
+        traj_path_unified = os.path.join(data_base_path, f"unit{unit_id}", "trajectory_complete.npy")
         seq_path = os.path.join(data_base_path, f"unit{unit_id}", "feature_selected", "sequences_complete.npy")
         if use_trajectory and os.path.exists(traj_path):
             traj = np.load(traj_path)
+        elif use_trajectory and os.path.exists(traj_path_unified):
+            traj = np.load(traj_path_unified)
+        else:
+            traj = None
+
+        if traj is not None:
             if traj.ndim == 3:
                 traj = traj.squeeze(0)
             if traj.ndim == 2:
