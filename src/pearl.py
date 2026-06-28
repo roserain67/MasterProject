@@ -154,6 +154,7 @@ def train(cfg):
     losses_actor = []
     losses_critic = []
     total_steps = 0
+    best_reward = -np.inf
 
     # ---------- 训练循环 ----------
     for ep in range(1, num_episodes + 1):
@@ -285,6 +286,15 @@ def train(cfg):
             "actions": Counter(episode_actions)
         })
 
+        if episode_reward > best_reward:
+            best_reward = episode_reward
+            best_path = os.path.join(log_dir, "best_model.pt")
+            torch.save({
+                "actor": actor.state_dict(),
+                "encoder": context_encoder.state_dict(),
+                "critic": critic.state_dict(),
+            }, best_path)
+
         if ep % 10 == 0:
             print(f"Ep {ep}: reward={episode_reward:.2f}  action_entropy={mean_entropy:.4f}  z_norm={mean_z_norm:.4f}")
 
@@ -297,6 +307,14 @@ def train(cfg):
     _plot_training(df, losses_critic, losses_actor, log_dir)
 
     print(f"训练完成！日志已保存到 {log_dir}")
+
+    # ---------- 加载 best model 用于测试 ----------
+    best_path = os.path.join(log_dir, "best_model.pt")
+    if os.path.exists(best_path):
+        ckpt = torch.load(best_path, map_location=DEVICE)
+        actor.load_state_dict(ckpt["actor"])
+        context_encoder.load_state_dict(ckpt["encoder"])
+        print(f"已加载 best model (best_reward={best_reward:.2f})")
 
     # ---------- 测试评估 ----------
     test_episodes = cfg.get("test_episodes", 300)
