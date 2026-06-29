@@ -5,7 +5,13 @@
       "Bash(awk -F',' 'NR==1 || NR%30==0 || NR==301' \"c:/Users/Siyu.yang/git/0毕设/logs/compare/PEARL_seed2/diagnostics.csv\")",
       "Bash(awk -F',' 'NR==1 || NR%30==0 || NR==301' \"c:/Users/Siyu.yang/git/0毕设/logs/compare/PEARL_seed3/diagnostics.csv\")",
       "Bash(awk -F',' 'NR==1 || NR%30==0 || NR==301' \"c:/Users/Siyu.yang/git/0毕设/logs/compare/PEARL_seed0/diagnostics.csv\")",
-      "Bash(awk -F',' 'NR==1 || NR%30==0 || NR==301' \"c:/Users/Siyu.yang/git/0毕设/logs/compare/PEARL_seed4/diagnostics.csv\")"
+      "Bash(awk -F',' 'NR==1 || NR%30==0 || NR==301' \"c:/Users/Siyu.yang/git/0毕设/logs/compare/PEARL_seed4/diagnostics.csv\")",
+      "Bash(awk -F',' 'NR>1{if\\($2>max\\){max=$2; line=NR-1}} END{print \"Best ep: \"line\", reward: \"max}')",
+      "Bash(awk -F',' 'NR>1{r[NR-1]=$2} END{for\\(i=NR-10;i<NR;i++\\) print \"ep \"i\": \"r[i]}')",
+      "Bash(awk -F',' 'NR>601 && NR<=801{sum+=$2; n++} END{print \"Avg reward \\(ep600-800\\): \" sum/n \" \\(n=\"n\"\\)\"}')",
+      "Bash(awk -F',' 'NR>401 && NR<=601{sum+=$2; n++} END{print \"Avg reward \\(ep400-600\\): \" sum/n \" \\(n=\"n\"\\)\"}')",
+      "Bash(awk -F',' 'NR==1 || NR%30==0 || NR==301' \"c:/Users/Siyu.yang/git/0毕设/logs/compare/PEARL_seed0/loss_reward_action.csv\")",
+      "Bash(awk -F, 'NR==1{next} NR%50==2 || NR>295' logs/compare/PEARL_seed0/diagnostics.csv)"
     ]
   }
 }
