@@ -26,7 +26,7 @@ lr_critic: 5.0e-5
 # 探索
 init_temp: 1.4
 temp_decay_ep: 300
-entropy_coef: 0.2
+entropy_coef: 2.0
 
 # Critic 稳定性
 tau: 0.005

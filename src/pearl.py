@@ -135,7 +135,7 @@ def train(cfg):
     opt_actor = optim.Adam(actor.parameters(), lr=cfg["lr_actor"])
     opt_critic = optim.Adam(critic.parameters(), lr=cfg["lr_critic"])
 
-    target_entropy = 0.5 * np.log(n_actions)
+    target_entropy = 0.1 * np.log(n_actions)
     log_alpha = torch.tensor(np.log(cfg["entropy_coef"]), dtype=torch.float32, device=DEVICE, requires_grad=True)
     opt_alpha = optim.Adam([log_alpha], lr=cfg["lr_actor"])
 
