@@ -109,21 +109,23 @@ def _threshold_policy(env, thr):
 
 def seed_demonstrations(replay, train_sequences, train_unit_ids, encoder_model,
                         state_dim, no_gru, max_len, reward_clip,
-                        good_thresh, min_thresh, n_demos):
-    """用阈值专家滚出 n_demos 条高回报轨迹预填 replay buffer。
-    目的：给 critic 提供 +600 量级的正样本锚点，打破“buffer 全是坍缩轨迹
-    → critic 锚定 -150 → policy 锁死”的死循环。轨迹格式与训练采集完全一致。"""
+                        good_thresh, min_thresh, n_demos, n_neg=0):
+    """预填 replay buffer，给 critic 两类锚点：
+      · 正样本（n_demos 条）：阈值专家高回报轨迹（reward≈+600），打破“buffer 全是
+        坍缩轨迹 → critic 锚定 -150 → policy 锁死”的死循环。
+      · 负样本（n_neg 条）：纯 run 一路跑到故障的轨迹（reward<0），告诉 critic
+        “高 pointer 下不维修会撞 -200”。缺这类样本时 critic 会高估 run
+        （诊断显示 Q(run) 在任何 pointer 都最高），导致确定性策略退化成纯 run。
+    两类轨迹格式与训练采集完全一致。"""
     n_seq = len(train_sequences)
-    rewards = []
-    for k in range(n_demos):
-        idx = k % n_seq                          # 轮流覆盖每个 unit
-        thr = 0.5 + 0.35 * np.random.rand()      # 阈值抖动，制造多样的好轨迹
+
+    def _rollout_and_push(idx, policy_fn):
         env = MaintenanceEnv(train_sequences[idx], encoder_model,
                              state_dim=state_dim, no_gru=no_gru)
         s = env.reset()
         transitions, ep_r = [], 0.0
         for _ in range(max_len):
-            a = _threshold_policy(env, thr)
+            a = policy_fn(env)
             s2, r, done, _ = env.step(a)
             r_clipped = float(np.clip(r, -reward_clip, reward_clip))
             transitions.append((s.copy(), a, r_clipped, s2.copy(), done))
@@ -132,10 +134,25 @@ def seed_demonstrations(replay, train_sequences, train_unit_ids, encoder_model,
             if done:
                 break
         replay.push_episode(transitions, ep_r, train_unit_ids[idx], good_thresh, min_thresh)
-        rewards.append(ep_r)
-    if rewards:
-        print(f">> demo 注入: {len(rewards)} 条阈值专家轨迹, "
-              f"reward {min(rewards):.0f}~{max(rewards):.0f} (均值 {np.mean(rewards):.0f})")
+        return ep_r
+
+    # 正样本：阈值专家（阈值抖动制造多样好轨迹）
+    pos_rewards = []
+    for k in range(n_demos):
+        thr = 0.5 + 0.35 * np.random.rand()
+        pos_rewards.append(_rollout_and_push(
+            k % n_seq, lambda env, thr=thr: _threshold_policy(env, thr)))
+    if pos_rewards:
+        print(f">> demo 正样本注入: {len(pos_rewards)} 条阈值专家轨迹, "
+              f"reward {min(pos_rewards):.0f}~{max(pos_rewards):.0f} (均值 {np.mean(pos_rewards):.0f})")
+
+    # 负样本：纯 run 跑到故障（绝不维修），给 critic “run 的真实下场”
+    neg_rewards = []
+    for k in range(n_neg):
+        neg_rewards.append(_rollout_and_push(k % n_seq, lambda env: 0))
+    if neg_rewards:
+        print(f">> demo 负样本注入: {len(neg_rewards)} 条纯 run 故障轨迹, "
+              f"reward {min(neg_rewards):.0f}~{max(neg_rewards):.0f} (均值 {np.mean(neg_rewards):.0f})")
 
 
 # ======================================================
@@ -236,10 +253,11 @@ def train(cfg):
 
     # ---------- demo 注入：阈值专家预填 buffer（给 critic 正样本锚点）----------
     n_demos = cfg.get("demo_episodes", 30)
-    if n_demos > 0:
+    n_neg = cfg.get("demo_neg_episodes", 15)
+    if n_demos > 0 or n_neg > 0:
         seed_demonstrations(replay, train_sequences, train_unit_ids, encoder_model,
                             state_dim, no_gru, max_len, reward_clip,
-                            replay_good_thresh, replay_min_thresh, n_demos)
+                            replay_good_thresh, replay_min_thresh, n_demos, n_neg)
 
     # ---------- 训练循环 ----------
     for ep in range(1, num_episodes + 1):

@@ -40,6 +40,7 @@ recent_capacity: 40
 replay_good_thresh: -10
 replay_min_thresh: -3000
 demo_episodes: 30      # 阈值专家预填轨迹数（给 critic 正样本锚点；0=关闭）
+demo_neg_episodes: 15  # 纯 run 跑到故障的负样本数（教 critic "高 pointer 下不修会撞 -200"；0=关闭）
 
 # Curriculum & Collapse
 curriculum_ep: 150
