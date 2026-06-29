@@ -17,6 +17,7 @@
   python experiments/diagnose_policy.py --log_dir logs/compare/PEARL_seed2
 """
 import argparse
+import contextlib
 import os
 import sys
 
@@ -25,6 +26,20 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import yaml
 import numpy as np
 import torch
+
+
+class _Tee:
+    """同时写到控制台和文件。"""
+    def __init__(self, *streams):
+        self.streams = streams
+
+    def write(self, data):
+        for s in self.streams:
+            s.write(data)
+
+    def flush(self):
+        for s in self.streams:
+            s.flush()
 
 from src.utils.paths import find_project_root
 os.chdir(find_project_root())
@@ -97,7 +112,11 @@ def main():
     parser = argparse.ArgumentParser(description="策略诊断（只读）")
     parser.add_argument("--config", type=str, default="configs/pearl_default.yaml")
     parser.add_argument("--log_dir", type=str, default="logs/compare/PEARL_seed0")
+    parser.add_argument("--out", type=str, default=None,
+                        help="结果输出文件（默认 <log_dir>/diagnose_policy.txt）")
     args = parser.parse_args()
+
+    out_path = args.out or os.path.join(args.log_dir, "diagnose_policy.txt")
 
     with open(args.config, "r", encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
@@ -121,23 +140,27 @@ def main():
     ckpt = torch.load(ckpt_path, map_location=DEVICE)
     actor.load_state_dict(ckpt["actor"])
     context_encoder.load_state_dict(ckpt["encoder"])
-    if "critic" in ckpt:
+    has_critic = "critic" in ckpt
+    if has_critic:
         critic.load_state_dict(ckpt["critic"])
-    else:
-        print("!! best_model 里没有 critic（旧 checkpoint），Q 值不可信")
     actor.eval(); critic.eval(); context_encoder.eval()
-    print(f"已加载 {ckpt_path}")
 
     train_sequences, train_unit_ids = load_sequences(cfg["data_base"], cfg["train_units"])
 
-    # 每个 train unit 取第一条序列做诊断
-    seen = set()
-    for seq, uid in zip(train_sequences, train_unit_ids):
-        if uid in seen:
-            continue
-        seen.add(uid)
-        diag_one_unit(seq, uid, encoder_model, actor, critic, context_encoder,
-                      state_dim, n_actions, context_input_dim, no_gru)
+    with open(out_path, "w", encoding="utf-8") as fout:
+        with contextlib.redirect_stdout(_Tee(sys.stdout, fout)):
+            print(f"已加载 {ckpt_path}")
+            if not has_critic:
+                print("!! best_model 里没有 critic（旧 checkpoint），Q 值不可信")
+            # 每个 train unit 取第一条序列做诊断
+            seen = set()
+            for seq, uid in zip(train_sequences, train_unit_ids):
+                if uid in seen:
+                    continue
+                seen.add(uid)
+                diag_one_unit(seq, uid, encoder_model, actor, critic, context_encoder,
+                              state_dim, n_actions, context_input_dim, no_gru)
+    print(f"\n>> 结果已写入 {out_path}")
 
 
 if __name__ == "__main__":

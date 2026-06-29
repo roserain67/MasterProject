@@ -11,7 +11,8 @@
       "Bash(awk -F',' 'NR>601 && NR<=801{sum+=$2; n++} END{print \"Avg reward \\(ep600-800\\): \" sum/n \" \\(n=\"n\"\\)\"}')",
       "Bash(awk -F',' 'NR>401 && NR<=601{sum+=$2; n++} END{print \"Avg reward \\(ep400-600\\): \" sum/n \" \\(n=\"n\"\\)\"}')",
       "Bash(awk -F',' 'NR==1 || NR%30==0 || NR==301' \"c:/Users/Siyu.yang/git/0毕设/logs/compare/PEARL_seed0/loss_reward_action.csv\")",
-      "Bash(awk -F, 'NR==1{next} NR%50==2 || NR>295' logs/compare/PEARL_seed0/diagnostics.csv)"
+      "Bash(awk -F, 'NR==1{next} NR%50==2 || NR>295' logs/compare/PEARL_seed0/diagnostics.csv)",
+      "Bash(awk -F',' '{print $1\",\"$2}')"
     ]
   }
 }
