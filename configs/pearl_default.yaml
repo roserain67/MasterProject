@@ -39,6 +39,7 @@ good_capacity: 80
 recent_capacity: 40
 replay_good_thresh: -10
 replay_min_thresh: -3000
+demo_episodes: 30      # 阈值专家预填轨迹数（给 critic 正样本锚点；0=关闭）
 
 # Curriculum & Collapse
 curriculum_ep: 150

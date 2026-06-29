@@ -90,6 +90,55 @@ class Critic(nn.Module):
 
 
 # ======================================================
+# Demo 注入：阈值专家策略预填 replay buffer
+# ======================================================
+def _threshold_policy(env, thr):
+    """阈值专家：哪个部件退化超过 thr*寿命就修哪个，否则 run。
+    只依赖 pointer_A/B 与 seq_len，与 state 表示（GRU/no_gru）无关。"""
+    L = env.seq_len
+    a_hot = env.pointer_A >= thr * L
+    b_hot = env.pointer_B >= thr * L
+    if a_hot and b_hot:
+        return 3
+    if a_hot:
+        return 1
+    if b_hot:
+        return 2
+    return 0
+
+
+def seed_demonstrations(replay, train_sequences, train_unit_ids, encoder_model,
+                        state_dim, no_gru, max_len, reward_clip,
+                        good_thresh, min_thresh, n_demos):
+    """用阈值专家滚出 n_demos 条高回报轨迹预填 replay buffer。
+    目的：给 critic 提供 +600 量级的正样本锚点，打破“buffer 全是坍缩轨迹
+    → critic 锚定 -150 → policy 锁死”的死循环。轨迹格式与训练采集完全一致。"""
+    n_seq = len(train_sequences)
+    rewards = []
+    for k in range(n_demos):
+        idx = k % n_seq                          # 轮流覆盖每个 unit
+        thr = 0.5 + 0.35 * np.random.rand()      # 阈值抖动，制造多样的好轨迹
+        env = MaintenanceEnv(train_sequences[idx], encoder_model,
+                             state_dim=state_dim, no_gru=no_gru)
+        s = env.reset()
+        transitions, ep_r = [], 0.0
+        for _ in range(max_len):
+            a = _threshold_policy(env, thr)
+            s2, r, done, _ = env.step(a)
+            r_clipped = float(np.clip(r, -reward_clip, reward_clip))
+            transitions.append((s.copy(), a, r_clipped, s2.copy(), done))
+            ep_r += r
+            s = s2
+            if done:
+                break
+        replay.push_episode(transitions, ep_r, train_unit_ids[idx], good_thresh, min_thresh)
+        rewards.append(ep_r)
+    if rewards:
+        print(f">> demo 注入: {len(rewards)} 条阈值专家轨迹, "
+              f"reward {min(rewards):.0f}~{max(rewards):.0f} (均值 {np.mean(rewards):.0f})")
+
+
+# ======================================================
 # 训练
 # ======================================================
 def train(cfg):
@@ -184,6 +233,13 @@ def train(cfg):
     s_ref = torch.tensor(ref_env.reset(), dtype=torch.float32, device=DEVICE).unsqueeze(0)
     zero_ctx = torch.zeros((1, context_input_dim), device=DEVICE)
     diag_records = []
+
+    # ---------- demo 注入：阈值专家预填 buffer（给 critic 正样本锚点）----------
+    n_demos = cfg.get("demo_episodes", 30)
+    if n_demos > 0:
+        seed_demonstrations(replay, train_sequences, train_unit_ids, encoder_model,
+                            state_dim, no_gru, max_len, reward_clip,
+                            replay_good_thresh, replay_min_thresh, n_demos)
 
     # ---------- 训练循环 ----------
     for ep in range(1, num_episodes + 1):
