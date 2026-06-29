@@ -25,6 +25,15 @@ from src.utils.data_loader import load_sequences
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
+def set_seed(seed):
+    """统一设置 random / numpy / torch 随机种子，保证可复现"""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
+
 # ======================================================
 # PEARL 网络组件
 # ======================================================
@@ -85,6 +94,12 @@ class Critic(nn.Module):
 # ======================================================
 def train(cfg):
     """PEARL 训练主函数，所有超参从 cfg dict 传入"""
+    # ---------- 随机种子（必须在建网络/采样之前）----------
+    seed = cfg.get("seed")
+    if seed is not None:
+        set_seed(seed)
+        print(f">> 随机种子已设置: {seed}")
+
     # ---------- 数据加载 ----------
     data_base = cfg["data_base"]
     train_sequences, train_unit_ids = load_sequences(data_base, cfg["train_units"])
