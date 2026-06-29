@@ -163,6 +163,13 @@ def train(cfg):
     total_steps = 0
     best_reward = -np.inf
 
+    # ---------- 诊断探针：固定参考态，跨 episode 可比 ----------
+    # 用第一条训练序列的初始 state 作为固定锚点，z 取 zero-context 的 mu（确定性，稳定可比）
+    ref_env = MaintenanceEnv(train_sequences[0], encoder_model, state_dim=state_dim, no_gru=no_gru)
+    s_ref = torch.tensor(ref_env.reset(), dtype=torch.float32, device=DEVICE).unsqueeze(0)
+    zero_ctx = torch.zeros((1, context_input_dim), device=DEVICE)
+    diag_records = []
+
     # ---------- 训练循环 ----------
     for ep in range(1, num_episodes + 1):
         ctxbuf.clear()
@@ -178,6 +185,8 @@ def train(cfg):
         ep_transitions = []
         ep_entropies = []
         ep_z_norms = []
+        la_start = len(losses_actor)   # 本回合 loss 切片起点
+        lc_start = len(losses_critic)
 
         for t in range(max_len):
             total_steps += 1
@@ -291,6 +300,31 @@ def train(cfg):
 
         mean_entropy = float(np.mean(ep_entropies)) if ep_entropies else 0.0
         mean_z_norm = float(np.mean(ep_z_norms)) if ep_z_norms else 0.0
+
+        # ---------- 诊断探针：固定参考态下测量策略/critic 状态 ----------
+        with torch.no_grad():
+            mu_ref, _ = context_encoder(zero_ctx)
+            z_ref = mu_ref                       # 确定性 z，去掉采样噪声
+            probs_ref = actor(s_ref, z_ref).cpu().numpy().flatten()
+            q_ref = critic(s_ref, z_ref).cpu().numpy().flatten()
+        ent_ref = float(-np.sum(probs_ref * np.log(probs_ref + 1e-8)))
+        cur_alpha = float(log_alpha.exp().item())
+        ep_la = float(np.mean(losses_actor[la_start:])) if len(losses_actor) > la_start else float("nan")
+        ep_lc = float(np.mean(losses_critic[lc_start:])) if len(losses_critic) > lc_start else float("nan")
+        diag_records.append({
+            "episode": ep,
+            "reward": episode_reward,
+            "alpha": cur_alpha,            # auto-entropy 温度（看是否暴涨/卡死）
+            "ent_ref": ent_ref,            # 固定态策略熵：→0 即真坍缩，max=ln5≈1.609
+            "ent_ep": mean_entropy,        # 本回合实际动作熵
+            "argmax_ref": int(np.argmax(probs_ref)),  # 固定态贪婪动作（对应 deterministic eval）
+            **{f"p{i}": float(probs_ref[i]) for i in range(n_actions)},  # 各动作概率
+            **{f"q{i}": float(q_ref[i]) for i in range(n_actions)},      # 各动作 Q（看高估/发散）
+            "z_norm": mean_z_norm,
+            "loss_actor": ep_la,
+            "loss_critic": ep_lc,
+        })
+
         records.append({
             "episode": ep, "reward": episode_reward,
             "action_entropy": mean_entropy, "z_norm": mean_z_norm,
@@ -307,12 +341,16 @@ def train(cfg):
             }, best_path)
 
         if ep % 10 == 0:
-            print(f"Ep {ep}: reward={episode_reward:.2f}  action_entropy={mean_entropy:.4f}  z_norm={mean_z_norm:.4f}")
+            ps = " ".join(f"{probs_ref[i]:.2f}" for i in range(n_actions))
+            qs = " ".join(f"{q_ref[i]:.0f}" for i in range(n_actions))
+            print(f"Ep {ep}: reward={episode_reward:7.1f} | alpha={cur_alpha:.3f} ent_ref={ent_ref:.3f} "
+                  f"argmax={int(np.argmax(probs_ref))} | p=[{ps}] Q=[{qs}] | z={mean_z_norm:.2f}")
 
     # ---------- 保存 CSV ----------
     df = pd.DataFrame(records)
     df.to_csv(os.path.join(log_dir, "loss_reward_action.csv"), index=False)
     pd.DataFrame({"critic": losses_critic, "actor": losses_actor}).to_csv(os.path.join(log_dir, "loss_curves.csv"), index=False)
+    pd.DataFrame(diag_records).to_csv(os.path.join(log_dir, "diagnostics.csv"), index=False)
 
     # ---------- 训练曲线图 ----------
     _plot_training(df, losses_critic, losses_actor, log_dir)
