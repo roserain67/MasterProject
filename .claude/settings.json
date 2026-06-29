@@ -12,7 +12,18 @@
       "Bash(awk -F',' 'NR>401 && NR<=601{sum+=$2; n++} END{print \"Avg reward \\(ep400-600\\): \" sum/n \" \\(n=\"n\"\\)\"}')",
       "Bash(awk -F',' 'NR==1 || NR%30==0 || NR==301' \"c:/Users/Siyu.yang/git/0毕设/logs/compare/PEARL_seed0/loss_reward_action.csv\")",
       "Bash(awk -F, 'NR==1{next} NR%50==2 || NR>295' logs/compare/PEARL_seed0/diagnostics.csv)",
-      "Bash(awk -F',' '{print $1\",\"$2}')"
+      "Bash(awk -F',' '{print $1\",\"$2}')",
+      "Bash(awk -F',' 'NR==1 || NR%30==0' \"c:/Users/Siyu.yang/git/0毕设/logs/compare/PEARL_seed0/diagnostics.csv\")",
+      "Bash(awk -F',' 'NR==1 || NR%30==0' \"c:/Users/Siyu.yang/git/0毕设/logs/compare/PEARL_seed2/diagnostics.csv\")",
+      "Bash(awk -F',' 'NR>1 {print $2}' \"c:/Users/Siyu.yang/git/0毕设/logs/compare/PEARL_seed0/test_results_unit15.csv\")",
+      "Bash(awk -F',' 'NR>1 {print $2}' \"c:/Users/Siyu.yang/git/0毕设/logs/compare/PEARL_seed2/test_results_unit14.csv\")",
+      "Bash(cd \"C:/Users/Siyu.yang/git/0毕设\")",
+      "Bash(echo '############ __TRACKED_VAR__ ############')",
+      "Bash(grep -nE *)",
+      "Bash(awk -F',' 'NR>1 {print $2}' \"c:/Users/Siyu.yang/git/0毕设/logs/compare/PEARL_seed0/test_results_unit14.csv\")",
+      "Bash(awk -F',' 'NR>1 {r=$2; if\\(r>600\\) h++; else if\\(r>300\\) m++; else l++} END{print \"reward>600:\", h+0, \"  300~600:\", m+0, \"  <300:\", l+0}' \"c:/Users/Siyu.yang/git/0毕设/logs/compare/PEARL_seed0/test_results_unit15.csv\")",
+      "Bash(awk -F',' 'NR>1 {r=$2; if\\(r>500\\) h++; else if\\(r>100\\) m++; else l++} END{print \"reward>500:\", h+0, \"  100~500:\", m+0, \"  <100:\", l+0}' \"c:/Users/Siyu.yang/git/0毕设/logs/compare/PEARL_seed2/test_results_unit14.csv\")",
+      "Bash(awk -F',' 'NR>1 {r=$2; if\\(r>500\\) h++; else if\\(r>100\\) m++; else l++} END{print \"reward>500:\", h+0, \"  100~500:\", m+0, \"  <100:\", l+0}' \"c:/Users/Siyu.yang/git/0毕设/logs/compare/PEARL_seed2/test_results_unit15.csv\")"
     ]
   }
 }
