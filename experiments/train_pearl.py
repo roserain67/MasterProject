@@ -1,4 +1,4 @@
-"""PEARL 训练入口"""
+"""PEARL                      训练入口"""
 import argparse
 import yaml
 import sys

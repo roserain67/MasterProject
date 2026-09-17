@@ -89,17 +89,39 @@ class Critic(nn.Module):
         return self.net(x)
 
 
+class TwinCritic(nn.Module):
+    """双 Q 网络，forward 返回 min(Q1, Q2)。
+
+    单 critic 对 replay buffer 未覆盖的 (状态,动作) 会乐观外推，actor 忠实跟随
+    错误 Q —— 这是本项目三次训练故障的共同根因。取 min 压低未见动作的估值。"""
+
+    def __init__(self, state_dim, z_dim, n_actions, hidden=256):
+        super().__init__()
+        self.q1 = Critic(state_dim, z_dim, n_actions, hidden)
+        self.q2 = Critic(state_dim, z_dim, n_actions, hidden)
+
+    def forward(self, s, z):
+        return torch.min(self.q1(s, z), self.q2(s, z))
+
+    def both(self, s, z):
+        return self.q1(s, z), self.q2(s, z)
+
+
 # ======================================================
 # Demo 注入：阈值专家策略预填 replay buffer
 # ======================================================
-def _threshold_policy(env, thr):
+def _threshold_policy(env, thr, repair_action=3):
     """阈值专家：哪个部件退化超过 thr*寿命就修哪个，否则 run。
-    只依赖 pointer_A/B 与 seq_len，与 state 表示（GRU/no_gru）无关。"""
+    只依赖 pointer_A/B 与 seq_len，与 state 表示（GRU/no_gru）无关。
+
+    repair_action 指定“两个部件同时超阈值”时用哪个动作：3=修AB，4=更换。
+    两者在首次维修时对 pointer 的效果完全相同（_restore_point(1)=0），成本却是
+    6.5 vs 40，因此同一 thr 下的两条轨迹构成 critic 所需的同状态对照样本。"""
     L = env.seq_len
     a_hot = env.pointer_A >= thr * L
     b_hot = env.pointer_B >= thr * L
     if a_hot and b_hot:
-        return 3
+        return repair_action
     if a_hot:
         return 1
     if b_hot:
@@ -109,14 +131,18 @@ def _threshold_policy(env, thr):
 
 def seed_demonstrations(replay, train_sequences, train_unit_ids, encoder_model,
                         state_dim, no_gru, max_len, reward_clip,
-                        good_thresh, min_thresh, n_demos, n_neg=0):
-    """预填 replay buffer，给 critic 两类锚点：
+                        good_thresh, min_thresh, n_demos, n_neg=0, n_replace=0):
+    """预填 replay buffer，给 critic 三类锚点：
       · 正样本（n_demos 条）：阈值专家高回报轨迹（reward≈+600），打破“buffer 全是
         坍缩轨迹 → critic 锚定 -150 → policy 锁死”的死循环。
       · 负样本（n_neg 条）：纯 run 一路跑到故障的轨迹（reward<0），告诉 critic
         “高 pointer 下不维修会撞 -200”。缺这类样本时 critic 会高估 run
         （诊断显示 Q(run) 在任何 pointer 都最高），导致确定性策略退化成纯 run。
-    两类轨迹格式与训练采集完全一致。"""
+      · 更换对照样本（n_replace 条）：把正样本里的“修AB”换成“更换”，其余完全相同。
+        动作 4 原本在 buffer 里零覆盖，critic 只能外推，诊断显示它在高 pointer 处
+        给出 Q(更换)=15.8 > Q(修AB)=2.3，排序反了 —— 于是策略用成本 40 的更换
+        代替了成本 6.5 的修AB，白丢约 65 分。这批轨迹把动作 4 的真实代价钉住。
+    三类轨迹格式与训练采集完全一致。"""
     n_seq = len(train_sequences)
 
     def _rollout_and_push(idx, policy_fn):
@@ -154,6 +180,18 @@ def seed_demonstrations(replay, train_sequences, train_unit_ids, encoder_model,
         print(f">> demo 负样本注入: {len(neg_rewards)} 条纯 run 故障轨迹, "
               f"reward {min(neg_rewards):.0f}~{max(neg_rewards):.0f} (均值 {np.mean(neg_rewards):.0f})")
 
+    # 更换对照样本：与正样本同阈值分布，但维修动作换成 4（更换）。
+    # 一半用正样本的高阈值（同状态对照），一半用低阈值（频繁更换，回报明显更低），
+    # 让 critic 在“更换时机”这个维度上也有梯度。
+    rep_rewards = []
+    for k in range(n_replace):
+        thr = (0.5 + 0.35 * np.random.rand()) if k % 2 == 0 else (0.15 + 0.20 * np.random.rand())
+        rep_rewards.append(_rollout_and_push(
+            k % n_seq, lambda env, thr=thr: _threshold_policy(env, thr, repair_action=4)))
+    if rep_rewards:
+        print(f">> demo 更换对照注入: {len(rep_rewards)} 条更换轨迹, "
+              f"reward {min(rep_rewards):.0f}~{max(rep_rewards):.0f} (均值 {np.mean(rep_rewards):.0f})")
+
 
 # ======================================================
 # 训练
@@ -172,8 +210,10 @@ def train(cfg):
     if len(train_sequences) == 0:
         raise ValueError(f"未找到训练数据，请检查路径: {data_base}")
 
+    # 评测 unit = 测试集 + 训练集：训练 unit 的评测值用于算泛化 gap
+    eval_units = cfg.get("eval_units") or (list(cfg["test_units"]) + list(cfg["train_units"]))
     test_by_unit = {}
-    for uid in cfg["test_units"]:
+    for uid in eval_units:
         seqs, _ = load_sequences(data_base, [uid])
         if len(seqs) > 0:
             test_by_unit[uid] = seqs
@@ -193,8 +233,8 @@ def train(cfg):
     context_input_dim = state_dim + 2 + state_dim
     context_encoder = ContextEncoder(context_input_dim, z_dim=z_dim).to(DEVICE)
     actor = Actor(state_dim, z_dim, n_actions).to(DEVICE)
-    critic = Critic(state_dim, z_dim, n_actions).to(DEVICE)
-    critic_target = Critic(state_dim, z_dim, n_actions).to(DEVICE)
+    critic = TwinCritic(state_dim, z_dim, n_actions).to(DEVICE)
+    critic_target = TwinCritic(state_dim, z_dim, n_actions).to(DEVICE)
     critic_target.load_state_dict(critic.state_dict())
 
     opt_enc = optim.Adam(context_encoder.parameters(), lr=cfg["lr_encoder"])
@@ -237,6 +277,7 @@ def train(cfg):
     # ---------- 日志 ----------
     log_dir = cfg["log_dir"]
     os.makedirs(log_dir, exist_ok=True)
+    save_config_snapshot(cfg, log_dir, extra={"eval_units": list(test_by_unit.keys())})
 
     records = []
     losses_actor = []
@@ -254,10 +295,11 @@ def train(cfg):
     # ---------- demo 注入：阈值专家预填 buffer（给 critic 正样本锚点）----------
     n_demos = cfg.get("demo_episodes", 30)
     n_neg = cfg.get("demo_neg_episodes", 15)
-    if n_demos > 0 or n_neg > 0:
+    n_replace = cfg.get("demo_replace_episodes", 10)
+    if n_demos > 0 or n_neg > 0 or n_replace > 0:
         seed_demonstrations(replay, train_sequences, train_unit_ids, encoder_model,
                             state_dim, no_gru, max_len, reward_clip,
-                            replay_good_thresh, replay_min_thresh, n_demos, n_neg)
+                            replay_good_thresh, replay_min_thresh, n_demos, n_neg, n_replace)
 
     # ---------- 训练循环 ----------
     for ep in range(1, num_episodes + 1):
@@ -337,20 +379,28 @@ def train(cfg):
                     logvar_b = torch.cat(logvar_list, dim=0)
 
                     z_b_for_critic = z_b.detach()
+                    alpha = log_alpha.exp().detach()
 
-                    q = critic(bs, z_b_for_critic)
-                    q_a = q.gather(1, ba.unsqueeze(1)).squeeze(1)
+                    q1, q2 = critic.both(bs, z_b_for_critic)
+                    idx_a = ba.unsqueeze(1)
+                    q1_a = q1.gather(1, idx_a).squeeze(1)
+                    q2_a = q2.gather(1, idx_a).squeeze(1)
 
                     with torch.no_grad():
-                        q_next = critic_target(bs2, z_b_for_critic).max(1)[0]
+                        # 软 bootstrap：按 π(s') 加权而非硬 max。硬 max 会把“未覆盖动作
+                        # 被乐观外推的 Q”直接传播进 target，正是 Q 自放大的来源之一。
+                        probs_next = actor(bs2, z_b_for_critic)
+                        logp_next = torch.log(probs_next + 1e-8)
+                        q_next_all = critic_target(bs2, z_b_for_critic)
+                        q_next = (probs_next * (q_next_all - alpha * logp_next)).sum(dim=1)
                         br_clipped = torch.clamp(br, -reward_clip, reward_clip)
                         td_target = br_clipped + gamma_n * (1 - bd) * q_next
                         td_target = torch.clamp(td_target, -td_clip, td_clip)
 
-                    loss_c = F.smooth_l1_loss(q_a, td_target, beta=50.0)
+                    loss_c = (F.smooth_l1_loss(q1_a, td_target, beta=50.0)
+                              + F.smooth_l1_loss(q2_a, td_target, beta=50.0))
 
-                    alpha = log_alpha.exp().detach()
-                    q_all = critic(bs, z_b_for_critic).detach()
+                    q_all = torch.min(q1, q2).detach()
                     probs_b = actor(bs, z_b)
                     log_probs = torch.log(probs_b + 1e-8)
                     loss_a = (probs_b * (alpha * log_probs - q_all)).sum(dim=1).mean()
@@ -439,10 +489,21 @@ def train(cfg):
     df = pd.DataFrame(records)
     df.to_csv(os.path.join(log_dir, "loss_reward_action.csv"), index=False)
     pd.DataFrame({"critic": losses_critic, "actor": losses_actor}).to_csv(os.path.join(log_dir, "loss_curves.csv"), index=False)
-    pd.DataFrame(diag_records).to_csv(os.path.join(log_dir, "diagnostics.csv"), index=False)
+    diag_df = pd.DataFrame(diag_records)
+    diag_df.to_csv(os.path.join(log_dir, "diagnostics.csv"), index=False)
+    # 各方法统一的训练曲线口径，供 aggregate.py 跨算法汇总
+    diag_df[["episode", "reward", "ent_ep", "alpha", "z_norm", "loss_actor", "loss_critic"]].to_csv(
+        os.path.join(log_dir, "train_curve.csv"), index=False)
 
     # ---------- 训练曲线图 ----------
     _plot_training(df, losses_critic, losses_actor, log_dir)
+
+    # ---------- 保存 final model（best_model 有幸存者偏差，两个都要）----------
+    torch.save({
+        "actor": actor.state_dict(),
+        "encoder": context_encoder.state_dict(),
+        "critic": critic.state_dict(),
+    }, os.path.join(log_dir, "final_model.pt"))
 
     print(f"训练完成！日志已保存到 {log_dir}")
 
@@ -454,16 +515,75 @@ def train(cfg):
         context_encoder.load_state_dict(ckpt["encoder"])
         print(f"已加载 best model (best_reward={best_reward:.2f})")
 
-    # ---------- 测试评估 ----------
-    test_episodes = cfg.get("test_episodes", 300)
+    # ---------- 测试评估（统一协议，见 pretrain/plan.md §2.3）----------
+    run_evaluation_suite(cfg, encoder_model, actor, context_encoder, test_by_unit,
+                         state_dim, n_actions, context_input_dim, no_gru, log_dir)
+
+
+def run_evaluation_suite(cfg, encoder_model, actor, context_encoder, test_by_unit,
+                         state_dim, n_actions, context_input_dim, no_gru, log_dir):
+    """对每个 unit、每个 K 值跑一遍统一评测，并落盘全套 artifact。
+
+    产物：eval_unit{U}_K{K}_summary.csv / _rollout.csv / z_dump.npz
+    另外把 K=0 的结果复制成 test_results_unit{U}.csv，保持 plot_compare.py 可用。"""
+    test_episodes = cfg.get("test_episodes", 100)
     deterministic = cfg.get("deterministic_eval", True)
+    eval_seed = cfg.get("eval_seed", 12345)
+    k_list = cfg.get("eval_k_shot", [0, 20])
+    rollout_episodes = cfg.get("rollout_episodes", 5)
+    max_steps = cfg.get("max_len", 200)
+
+    z_dump = {}
     for unit_id, test_seqs in test_by_unit.items():
-        test_results = evaluate(encoder_model, actor, context_encoder, test_seqs,
-                                state_dim, n_actions, context_input_dim,
-                                num_episodes=test_episodes, deterministic=deterministic,
-                                no_gru=no_gru)
-        _save_test_results(test_results, unit_id, log_dir)
-    print(f"全部测试结果已保存到 {log_dir}")
+        for k_shot in k_list:
+            results, rollout, z_mu, z_smp = evaluate(
+                encoder_model, actor, context_encoder, test_seqs,
+                state_dim, n_actions, context_input_dim,
+                num_episodes=test_episodes, deterministic=deterministic,
+                no_gru=no_gru, k_shot=k_shot, eval_seed=eval_seed,
+                rollout_episodes=rollout_episodes, max_steps=max_steps)
+
+            _save_eval_results(results, rollout, unit_id, k_shot, log_dir, n_actions)
+            z_dump[f"mu_unit{unit_id}_K{k_shot}"] = z_mu
+            z_dump[f"sample_unit{unit_id}_K{k_shot}"] = z_smp
+            rs = np.array([r["reward"] for r in results])
+            ec = np.array([r["reward_econ"] for r in results])
+            print(f"  unit{unit_id} K={k_shot}: reward {rs.mean():.1f} ± {rs.std():.1f} | "
+                  f"经济回报 {ec.mean():.1f} ± {ec.std():.1f}")
+
+            if k_shot == k_list[0]:
+                _save_test_results(results, unit_id, log_dir)
+
+    np.savez(os.path.join(log_dir, "z_dump.npz"), **z_dump)
+    print(f"全部测试结果 + z_dump 已保存到 {log_dir}")
+
+
+def save_config_snapshot(cfg, log_dir, extra=None):
+    """落盘完整配置 + git commit + 环境版本，用于证明各方法跑在同一套参数下。"""
+    import subprocess
+    import datetime
+    import yaml
+
+    try:
+        git_hash = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], stderr=subprocess.DEVNULL).decode().strip()
+        dirty = subprocess.check_output(
+            ["git", "status", "--porcelain"], stderr=subprocess.DEVNULL).decode().strip()
+    except Exception:
+        git_hash, dirty = "unknown", ""
+
+    snapshot = {
+        "config": dict(cfg),
+        "git_commit": git_hash,
+        "git_dirty": bool(dirty),
+        "timestamp": datetime.datetime.now().isoformat(timespec="seconds"),
+        "device": str(DEVICE),
+        "torch_version": str(torch.__version__),
+    }
+    if extra:
+        snapshot.update(extra)
+    with open(os.path.join(log_dir, "config_snapshot.yaml"), "w", encoding="utf-8") as f:
+        yaml.safe_dump(snapshot, f, allow_unicode=True, sort_keys=False)
 
 
 # ======================================================
@@ -471,67 +591,109 @@ def train(cfg):
 # ======================================================
 def evaluate(encoder_model, actor, context_encoder, test_sequences,
              state_dim, n_actions, context_input_dim,
-             num_episodes=300, deterministic=True, no_gru=False):
+             num_episodes=100, deterministic=True, no_gru=False,
+             k_shot=0, eval_seed=12345, rollout_episodes=5, max_steps=200,
+             z_mode="mu"):
+    """K-shot 评测。
+
+    k_shot = 每个 episode 开始前在该 unit 上采集的适应步数：
+      · K=0 → context 全空，z 取先验，真零样本；
+      · K>0 → 先用随机策略采样 K 步填 context，再推断 z。
+    z 在每个 episode 开始时算一次并**全程固定**（PEARL 原文的做法），
+    这样 K 是唯一的适应预算 —— 旧实现里 ctxbuf 跨 300 个 episode 从不清空，
+    报出来的"零样本"实际上是"适应过 300 个 episode"。
+
+    返回 (summary, rollout, z_mu, z_sample)。"""
     actor.eval()
     context_encoder.eval()
+    set_seed(eval_seed)
 
-    test_results = []
-    ctxbuf = ContextBuffer()
+    zeros_ctx = torch.zeros((1, context_input_dim), device=DEVICE)
 
-    for _ in range(min(3, len(test_sequences))):
-        seq = random.choice(test_sequences)
-        env_pre = MaintenanceEnv(seq, encoder_model, state_dim=state_dim, no_gru=no_gru)
-        s = env_pre.reset()
-        for _ in range(min(20, len(seq))):
-            s_t = torch.tensor(s, dtype=torch.float32, device=DEVICE).unsqueeze(0)
-            ctx = ctxbuf.sample_context()
-            ctx_t = torch.zeros((1, context_input_dim), device=DEVICE) if ctx is None else torch.tensor(ctx, dtype=torch.float32, device=DEVICE).unsqueeze(0)
-            with torch.no_grad():
-                mu, logvar = context_encoder(ctx_t)
-                z = sample_z(mu, logvar)
-                probs = actor(s_t, z).cpu().numpy().flatten()
-            probs = probs / (probs.sum() + 1e-8)
-            a = np.argmax(probs) if deterministic else np.random.choice(n_actions, p=probs)
-            s2, r, done, _ = env_pre.step(a)
-            ctxbuf.push(s, a, r, s2, done)
-            s = s2
-            if done:
-                break
+    def infer_z(ctxbuf):
+        ctx = ctxbuf.sample_context()
+        ctx_t = zeros_ctx if ctx is None else torch.tensor(
+            ctx, dtype=torch.float32, device=DEVICE).unsqueeze(0)
+        with torch.no_grad():
+            mu, logvar = context_encoder(ctx_t)
+            return mu, sample_z(mu, logvar)
+
+    def act(s, z, greedy):
+        s_t = torch.tensor(s, dtype=torch.float32, device=DEVICE).unsqueeze(0)
+        with torch.no_grad():
+            probs = actor(s_t, z).cpu().numpy().flatten()
+        probs = probs / (probs.sum() + 1e-8)
+        return int(np.argmax(probs)) if greedy else int(np.random.choice(n_actions, p=probs))
+
+    summary, rollout = [], []
+    z_mu_all, z_smp_all = [], []
 
     for ep_idx in range(num_episodes):
         seq = random.choice(test_sequences)
+        ctxbuf = ContextBuffer()
+
+        # ---- 适应阶段：采 k_shot 步经验填 context（用随机策略，保证覆盖多样）----
+        if k_shot > 0:
+            env_ad = MaintenanceEnv(seq, encoder_model, state_dim=state_dim, no_gru=no_gru)
+            s_ad = env_ad.reset()
+            for _ in range(k_shot):
+                _, z_ad = infer_z(ctxbuf)
+                a_ad = act(s_ad, z_ad, greedy=False)
+                s2_ad, r_ad, done_ad, _ = env_ad.step(a_ad)
+                ctxbuf.push(s_ad, a_ad, r_ad, s2_ad, done_ad)
+                s_ad = s2_ad
+                if done_ad:
+                    s_ad = env_ad.reset()
+
+        # ---- 推断 z，本 episode 全程固定 ----
+        z_mu, z_smp = infer_z(ctxbuf)
+        z = z_mu if z_mode == "mu" else z_smp
+        z_mu_all.append(z_mu.cpu().numpy().flatten())
+        z_smp_all.append(z_smp.cpu().numpy().flatten())
+
+        # ---- 评测 episode ----
         env = MaintenanceEnv(seq, encoder_model, state_dim=state_dim, no_gru=no_gru)
         s = env.reset()
-        episode_reward = 0
+        episode_reward = 0.0
+        episode_econ = 0.0
         episode_actions = []
+        reason = "truncated"
+        log_rollout = ep_idx < rollout_episodes
 
-        for t in range(200):
-            s_t = torch.tensor(s, dtype=torch.float32, device=DEVICE).unsqueeze(0)
-            ctx = ctxbuf.sample_context()
-            ctx_t = torch.zeros((1, context_input_dim), device=DEVICE) if ctx is None else torch.tensor(ctx, dtype=torch.float32, device=DEVICE).unsqueeze(0)
-            with torch.no_grad():
-                mu, logvar = context_encoder(ctx_t)
-                z = sample_z(mu, logvar)
-                probs = actor(s_t, z).cpu().numpy().flatten()
-            probs = probs / (probs.sum() + 1e-8)
-            action = np.argmax(probs) if deterministic else np.random.choice(n_actions, p=probs)
-            s2, r, done, _ = env.step(action)
-            ctxbuf.push(s, action, r, s2, done)
+        for t in range(max_steps):
+            p_a, p_b = env.pointer_A, env.pointer_B
+            action = act(s, z, greedy=deterministic)
+            s2, r, done, info = env.step(action)
+            if log_rollout:
+                rollout.append({
+                    "episode": ep_idx + 1, "t": t,
+                    "pointer_A": p_a, "pointer_B": p_b,
+                    "pos_A": p_a / env.seq_len, "pos_B": p_b / env.seq_len,
+                    "action": action, "reward": r,
+                    "reward_econ": info["reward_econ"], "done": int(done),
+                })
             episode_reward += r
+            episode_econ += info["reward_econ"]
             episode_actions.append(action)
             s = s2
             if done:
+                reason = info.get("reason", "")
                 break
 
-        test_results.append({
-            'episode': ep_idx + 1,
-            'reward': episode_reward,
-            'actions': dict(Counter(episode_actions))
+        counts = Counter(episode_actions)
+        summary.append({
+            "episode": ep_idx + 1,
+            "reward": episode_reward,
+            "reward_econ": episode_econ,   # 去掉 shaping 的经济回报，汇报口径用这个
+            "steps": len(episode_actions),
+            "reason": reason,
+            "actions": dict(counts),
         })
 
     actor.train()
     context_encoder.train()
-    return test_results
+    return (summary, pd.DataFrame(rollout),
+            np.array(z_mu_all, dtype=np.float32), np.array(z_smp_all, dtype=np.float32))
 
 
 # ======================================================
@@ -569,6 +731,20 @@ def _plot_training(df, losses_critic, losses_actor, log_dir, smooth_win=50):
         plt.grid(True, alpha=0.3)
         plt.savefig(os.path.join(log_dir, "loss_curves.png"))
         plt.close()
+
+
+def _save_eval_results(summary, rollout_df, unit_id, k_shot, log_dir, n_actions):
+    """按 plan.md §2.1 落盘：summary（每 episode 一行）+ rollout（每步一行）。"""
+    tag = f"unit{unit_id}_K{k_shot}"
+    rows = []
+    for r in summary:
+        row = {"episode": r["episode"], "reward": r["reward"],
+               "reward_econ": r["reward_econ"],
+               "steps": r["steps"], "reason": r["reason"]}
+        row.update({f"n_act{i}": r["actions"].get(i, 0) for i in range(n_actions)})
+        rows.append(row)
+    pd.DataFrame(rows).to_csv(os.path.join(log_dir, f"eval_{tag}_summary.csv"), index=False)
+    rollout_df.to_csv(os.path.join(log_dir, f"eval_{tag}_rollout.csv"), index=False)
 
 
 def _save_test_results(test_results, unit_id, log_dir, smooth_win=10):

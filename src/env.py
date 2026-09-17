@@ -140,22 +140,31 @@ class MaintenanceEnv(gym.Env):
 
         # Phase 3.5: Potential-based reward shaping
         phi_new = self._potential()
-        reward += self.gamma * phi_new - phi_old
+        shaping = self.gamma * phi_new - phi_old
+        reward += shaping
 
         # Phase 4: 终止检查
+        reasons = []
         if self.repair_in_row >= self.max_repair_in_row:
             done = True
             reward -= self.penalty_over_repair
+            reasons.append("over_repair")
 
         if self.pointer_A >= self.seq_len - 1 or self.pointer_B >= self.seq_len - 1:
             done = True
             reward -= self.penalty_break
+            reasons.append("break")
 
         if not done and self.current_step >= self.max_steps:
             done = True
             reward += self.survival_bonus
+            reasons.append("survive")
 
         if not done:
             self.state = self.encode_state()
 
-        return self.state, reward, done, {}
+        # reward 里含 potential-based shaping，它保证最优策略不变，但**不保证整集回报不变**：
+        # 修AB 策略整集 shaping ≈ +23，更换策略 ≈ +1.5，直接比 reward 会把 20 多分的
+        # shaping 差算成经济收益。汇报口径一律用 reward_econ（运营收益 − 维修成本 + 终止奖惩）。
+        info = {"reason": "+".join(reasons), "reward_econ": reward - shaping, "shaping": shaping}
+        return self.state, reward, done, info
